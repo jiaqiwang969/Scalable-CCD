@@ -51,23 +51,24 @@ kernel void yzFilter(
 static const char* kSTQTwoListsSrc = R"(
 using namespace metal;
 kernel void stqTwo(
-  device const double* minX [[buffer(0)]],
-  device const double* maxX [[buffer(1)]],
+  device const float* minX [[buffer(0)]],
+  device const float* maxX [[buffer(1)]],
   device const uchar*  listTag [[buffer(2)]], // 1 for A, 0 for B
   constant uint& baseI [[buffer(3)]],
   constant uint& n [[buffer(4)]],
   constant uint& maxN [[buffer(5)]],          // per-i neighbor cap
   device atomic_uint* gCount [[buffer(6)]],
   device int2* outPairs [[buffer(7)]],
+  device atomic_uint* gSat [[buffer(8)]],
   uint gid [[thread_position_in_grid]]
 ) {
   uint i = baseI + gid;
   if (i >= n) return;
   uint emitted = 0;
-  double amax = maxX[i];
+  float amax = maxX[i];
   uchar tagi = listTag[i];
   for (uint j = i + 1; j < n; ++j) {
-    double bmin = minX[j];
+    float bmin = minX[j];
     if (amax < bmin) break; // no more overlap along X
     if (tagi == listTag[j]) continue; // only cross-list
     uint pos = atomic_fetch_add_explicit(gCount, 1u, memory_order_relaxed);
@@ -75,14 +76,15 @@ kernel void stqTwo(
     emitted++;
     if (emitted >= maxN) break;
   }
+  if (emitted >= maxN) { atomic_store_explicit(gSat, 1u, memory_order_relaxed); }
 }
 )";
 
 static const char* kSTQTwoPTQSrc = R"(
 using namespace metal;
 kernel void stqTwoPTQ(
-  device const double* minX [[buffer(0)]],
-  device const double* maxX [[buffer(1)]],
+  device const float* minX [[buffer(0)]],
+  device const float* maxX [[buffer(1)]],
   device const uchar*  listTag [[buffer(2)]], // 1 for A, 0 for B
   constant uint& startI [[buffer(3)]],
   constant uint& endI [[buffer(4)]],          // exclusive
@@ -90,6 +92,7 @@ kernel void stqTwoPTQ(
   device atomic_uint* gHead [[buffer(6)]],    // global queue head
   device atomic_uint* gCount [[buffer(7)]],   // global pair counter
   device int2* outPairs [[buffer(8)]],
+  device atomic_uint* gSat [[buffer(9)]],
   uint tid [[thread_position_in_grid]]
 ) {
   while (true) {
@@ -97,10 +100,10 @@ kernel void stqTwoPTQ(
     uint i = startI + idx;
     if (i >= endI) break;
     uint emitted = 0;
-    double amax = maxX[i];
+    float amax = maxX[i];
     uchar tagi = listTag[i];
     for (uint j = i + 1; j < endI; ++j) {
-      double bmin = minX[j];
+      float bmin = minX[j];
       if (amax < bmin) break;
       if (tagi == listTag[j]) continue;
       uint pos = atomic_fetch_add_explicit(gCount, 1u, memory_order_relaxed);
@@ -108,6 +111,7 @@ kernel void stqTwoPTQ(
       emitted++;
       if (emitted >= maxN) break;
     }
+    if (emitted >= maxN) { atomic_store_explicit(gSat, 1u, memory_order_relaxed); }
   }
 }
 )";
@@ -115,41 +119,44 @@ kernel void stqTwoPTQ(
 static const char* kSTQSingleListSrc = R"(
 using namespace metal;
 kernel void stqSingle(
-  device const double* minX [[buffer(0)]],
-  device const double* maxX [[buffer(1)]],
+  device const float* minX [[buffer(0)]],
+  device const float* maxX [[buffer(1)]],
   constant uint& baseI [[buffer(2)]],
   constant uint& n [[buffer(3)]],
   constant uint& maxN [[buffer(4)]],
   device atomic_uint* gCount [[buffer(5)]],
   device int2* outPairs [[buffer(6)]],
+  device atomic_uint* gSat [[buffer(7)]],
   uint gid [[thread_position_in_grid]]
 ) {
   uint i = baseI + gid;
   if (i >= n) return;
   uint emitted = 0;
-  double amax = maxX[i];
+  float amax = maxX[i];
   for (uint j = i + 1; j < n; ++j) {
-    double bmin = minX[j];
+    float bmin = minX[j];
     if (amax < bmin) break;
     uint pos = atomic_fetch_add_explicit(gCount, 1u, memory_order_relaxed);
     outPairs[pos] = int2((int)i, (int)j);
     emitted++;
     if (emitted >= maxN) break;
   }
+  if (emitted >= maxN) { atomic_store_explicit(gSat, 1u, memory_order_relaxed); }
 }
 )";
 
 static const char* kSTQSinglePTQSrc = R"(
 using namespace metal;
 kernel void stqSinglePTQ(
-  device const double* minX [[buffer(0)]],
-  device const double* maxX [[buffer(1)]],
+  device const float* minX [[buffer(0)]],
+  device const float* maxX [[buffer(1)]],
   constant uint& startI [[buffer(2)]],
   constant uint& endI [[buffer(3)]],
   constant uint& maxN [[buffer(4)]],
   device atomic_uint* gHead [[buffer(5)]],
   device atomic_uint* gCount [[buffer(6)]],
   device int2* outPairs [[buffer(7)]],
+  device atomic_uint* gSat [[buffer(8)]],
   uint tid [[thread_position_in_grid]]
 ) {
   while (true) {
@@ -157,15 +164,16 @@ kernel void stqSinglePTQ(
     uint i = startI + idx;
     if (i >= endI) break;
     uint emitted = 0;
-    double amax = maxX[i];
+    float amax = maxX[i];
     for (uint j = i + 1; j < endI; ++j) {
-      double bmin = minX[j];
+      float bmin = minX[j];
       if (amax < bmin) break;
       uint pos = atomic_fetch_add_explicit(gCount, 1u, memory_order_relaxed);
       outPairs[pos] = int2((int)i, (int)j);
       emitted++;
       if (emitted >= maxN) break;
     }
+    if (emitted >= maxN) { atomic_store_explicit(gSat, 1u, memory_order_relaxed); }
   }
 }
 )";
@@ -394,8 +402,10 @@ bool Metal2Runtime::stqTwoLists(
         impl_->lastPairsMs = -1.0;
         outPairs.clear();
         // 设备缓冲（共享内存）
-        id<MTLBuffer> bMinX = [impl_->dev newBufferWithBytes:minX.data() length:sizeof(double)*n options:MTLResourceStorageModeShared];
-        id<MTLBuffer> bMaxX = [impl_->dev newBufferWithBytes:maxX.data() length:sizeof(double)*n options:MTLResourceStorageModeShared];
+        std::vector<float> minXf(n), maxXf(n);
+        for (size_t i=0;i<n;++i){ minXf[i]=(float)minX[i]; maxXf[i]=(float)maxX[i]; }
+        id<MTLBuffer> bMinX = [impl_->dev newBufferWithBytes:minXf.data() length:sizeof(float)*n options:MTLResourceStorageModeShared];
+        id<MTLBuffer> bMaxX = [impl_->dev newBufferWithBytes:maxXf.data() length:sizeof(float)*n options:MTLResourceStorageModeShared];
         id<MTLBuffer> bTag  = [impl_->dev newBufferWithBytes:listTag.data() length:sizeof(uint8_t)*n options:MTLResourceStorageModeShared];
 
         double acc_ms = 0.0;
@@ -410,6 +420,7 @@ bool Metal2Runtime::stqTwoLists(
             id<MTLBuffer> bMaxN = [impl_->dev newBufferWithBytes:&maxN length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
             id<MTLBuffer> bPairs = [impl_->dev newBufferWithLength:sizeof(int32_t)*2*cap options:MTLResourceStorageModeShared];
             id<MTLBuffer> bCnt  = [impl_->dev newBufferWithBytes:&zero length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> bSat  = [impl_->dev newBufferWithBytes:&zero length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
             id<MTLCommandBuffer> cb = [impl_->q commandBuffer];
             id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
             if (usePTQ) {
@@ -426,6 +437,7 @@ bool Metal2Runtime::stqTwoLists(
                 [enc setBuffer:bHead  offset:0 atIndex:6];
                 [enc setBuffer:bCnt   offset:0 atIndex:7];
                 [enc setBuffer:bPairs offset:0 atIndex:8];
+                [enc setBuffer:bSat   offset:0 atIndex:9];
                 NSUInteger w = impl_->cpsSTQTwoPTQ.maxTotalThreadsPerThreadgroup;
                 if (w == 0) w = 64;
                 NSUInteger tgSize = std::min<NSUInteger>(w, 256);
@@ -445,6 +457,7 @@ bool Metal2Runtime::stqTwoLists(
                 [enc setBuffer:bMaxN offset:0 atIndex:5];
                 [enc setBuffer:bCnt  offset:0 atIndex:6];
                 [enc setBuffer:bPairs offset:0 atIndex:7];
+                [enc setBuffer:bSat   offset:0 atIndex:8];
                 NSUInteger w = impl_->cpsSTQTwo.maxTotalThreadsPerThreadgroup;
                 if (w == 0) w = 64;
                 MTLSize grid = MTLSizeMake(cur,1,1);
@@ -462,11 +475,12 @@ bool Metal2Runtime::stqTwoLists(
             // 读回 pairs
             uint32_t cnt = *static_cast<uint32_t*>([bCnt contents]);
             if (cnt > cap) cnt = (uint32_t)cap; // 防御
+            uint32_t sat = *static_cast<uint32_t*>([bSat contents]);
             struct I2 { int32_t x; int32_t y; };
             I2* pp = static_cast<I2*>([bPairs contents]);
             outPairs.reserve(outPairs.size() + cnt);
             for (uint32_t i = 0; i < cnt; ++i) outPairs.emplace_back(pp[i].x, pp[i].y);
-            if (cnt >= cap) { aborted = true; break; } // 溢出，回退 CPU
+            if (cnt >= cap || sat) { aborted = true; break; } // 溢出或饱和，回退 CPU
             if (timeout_ms > 0.0 && acc_ms > timeout_ms) { aborted = true; break; } // 超时
         }
         if (aborted) { outPairs.clear(); return false; }
@@ -535,8 +549,10 @@ bool Metal2Runtime::stqSingleList(
         double timeout_ms = envD("SCALABLE_CCD_METAL2_STQ_TIMEOUT_MS", 200.0);
         impl_->lastPairsMs = -1.0;
         outPairs.clear();
-        id<MTLBuffer> bMinX = [impl_->dev newBufferWithBytes:minX.data() length:sizeof(double)*n options:MTLResourceStorageModeShared];
-        id<MTLBuffer> bMaxX = [impl_->dev newBufferWithBytes:maxX.data() length:sizeof(double)*n options:MTLResourceStorageModeShared];
+        std::vector<float> minXf(n), maxXf(n);
+        for (size_t i=0;i<n;++i){ minXf[i]=(float)minX[i]; maxXf[i]=(float)maxX[i]; }
+        id<MTLBuffer> bMinX = [impl_->dev newBufferWithBytes:minXf.data() length:sizeof(float)*n options:MTLResourceStorageModeShared];
+        id<MTLBuffer> bMaxX = [impl_->dev newBufferWithBytes:maxXf.data() length:sizeof(float)*n options:MTLResourceStorageModeShared];
         double acc_ms = 0.0;
         bool aborted = false;
         for (uint32_t base = 0; base < n; base += chunkI) {
@@ -564,6 +580,7 @@ bool Metal2Runtime::stqSingleList(
                 [enc setBuffer:bHead  offset:0 atIndex:5];
                 [enc setBuffer:bCnt   offset:0 atIndex:6];
                 [enc setBuffer:bPairs offset:0 atIndex:7];
+                [enc setBuffer:bCnt   offset:0 atIndex:8]; // reuse bCnt as gSat (init zero)
                 NSUInteger w = impl_->cpsSTQSinglePTQ.maxTotalThreadsPerThreadgroup;
                 if (w == 0) w = 64;
                 NSUInteger tgSize = std::min<NSUInteger>(w, 256);
@@ -582,6 +599,7 @@ bool Metal2Runtime::stqSingleList(
                 [enc setBuffer:bMaxN offset:0 atIndex:4];
                 [enc setBuffer:bCnt  offset:0 atIndex:5];
                 [enc setBuffer:bPairs offset:0 atIndex:6];
+                [enc setBuffer:bCnt  offset:0 atIndex:7]; // reuse as gSat
                 NSUInteger w = impl_->cpsSTQSingle.maxTotalThreadsPerThreadgroup;
                 if (w == 0) w = 64;
                 MTLSize grid = MTLSizeMake(cur,1,1);
@@ -598,11 +616,12 @@ bool Metal2Runtime::stqSingleList(
             acc_ms += ms;
             uint32_t cnt = *static_cast<uint32_t*>([bCnt contents]);
             if (cnt > cap) cnt = (uint32_t)cap;
+            uint32_t sat = *static_cast<uint32_t*>([bCnt contents]); // reused as gSat
             struct I2 { int32_t x; int32_t y; };
             I2* pp = static_cast<I2*>([bPairs contents]);
             outPairs.reserve(outPairs.size() + cnt);
             for (uint32_t i = 0; i < cnt; ++i) outPairs.emplace_back(pp[i].x, pp[i].y);
-            if (cnt >= cap) { aborted = true; break; }
+            if (cnt >= cap || sat) { aborted = true; break; }
             if (timeout_ms > 0.0 && acc_ms > timeout_ms) { aborted = true; break; }
         }
         if (aborted) { outPairs.clear(); return false; }

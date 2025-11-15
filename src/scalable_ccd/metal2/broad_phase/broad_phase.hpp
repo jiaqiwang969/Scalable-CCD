@@ -153,13 +153,14 @@ public:
                 // 观测：轴向候选 + CPU YZ filter 统计
                 std::vector<AABB> a_obs = a;
                 std::vector<AABB> b_obs = b;
-                sort_boxes_along_axis(sort_axis, a_obs);
-                sort_boxes_along_axis(sort_axis, b_obs);
-                // Flip A ids and merge（与 CPU 路径一致）
+                // 为了 GPU STQ 的正确性，这里统一按 X 轴(min[0])排序与合并
+                auto less_min_x = [](const AABB& x, const AABB& y){ return x.min[0] < y.min[0]; };
+                std::sort(a_obs.begin(), a_obs.end(), less_min_x);
+                std::sort(b_obs.begin(), b_obs.end(), less_min_x);
+                // Flip A ids and merge
                 for (auto& ax : a_obs) ax.element_id = -ax.element_id - 1;
                 std::vector<AABB> merged(a_obs.size()+b_obs.size());
-                auto less_min = [=](const AABB& x, const AABB& y){ return x.min[sort_axis] < y.min[sort_axis]; };
-                std::merge(a_obs.begin(), a_obs.end(), b_obs.begin(), b_obs.end(), merged.begin(), less_min);
+                std::merge(a_obs.begin(), a_obs.end(), b_obs.begin(), b_obs.end(), merged.begin(), less_min_x);
                 std::vector<std::pair<int,int>> pairs;
                 bool stq_ok = false;
                 if (Metal2Runtime::instance().available()) {
@@ -182,7 +183,8 @@ public:
                     stq_ok = Metal2Runtime::instance().stqTwoLists(minX,maxX,minYd,maxYd,minZd,maxZd,v0,v1,v2,listTag,pairs);
                 }
                 if (!stq_ok) {
-                    generate_axis_candidates(merged, sort_axis, /*two_lists*/true, pairs);
+                    // 回退 CPU 候选（同样沿 X 轴）
+                    generate_axis_candidates(merged, /*sort_axis*/0, /*two_lists*/true, pairs);
                 }
                 // 准备 GPU/CPU YZ 过滤输入
                 std::vector<float> minY(merged.size()), maxY(merged.size());
@@ -226,15 +228,15 @@ public:
             // 最终结果：严格或未启用 STQ -> 回退 CPU；否则使用 轴候选+过滤 产出
             if (!strict && env_flag_enabled("SCALABLE_CCD_METAL2_USE_STQ", false)) {
                 auto t_axis_start = Clock::now();
-                // 使用与观测一致的管线生成最终输出
+                // 使用与观测一致的管线生成最终输出（沿 X 轴排序与合并）
                 std::vector<AABB> a_final = a;
                 std::vector<AABB> b_final = b;
-                sort_boxes_along_axis(sort_axis, a_final);
-                sort_boxes_along_axis(sort_axis, b_final);
+                auto less_min_x = [](const AABB& x, const AABB& y){ return x.min[0] < y.min[0]; };
+                std::sort(a_final.begin(), a_final.end(), less_min_x);
+                std::sort(b_final.begin(), b_final.end(), less_min_x);
                 for (auto& ax : a_final) ax.element_id = -ax.element_id - 1;
                 std::vector<AABB> merged(a_final.size()+b_final.size());
-                auto less_min = [=](const AABB& x, const AABB& y){ return x.min[sort_axis] < y.min[sort_axis]; };
-                std::merge(a_final.begin(), a_final.end(), b_final.begin(), b_final.end(), merged.begin(), less_min);
+                std::merge(a_final.begin(), a_final.end(), b_final.begin(), b_final.end(), merged.begin(), less_min_x);
                 auto t_axis_end = Clock::now();
                 std::vector<std::pair<int,int>> pairs;
                 // 优先 GPU STQ 候选生成
@@ -262,7 +264,7 @@ public:
                 }
                 auto t_pairs_cpu_start = Clock::now();
                 if (!stq_ok){
-                    generate_axis_candidates(merged, sort_axis, /*two_lists*/true, pairs);
+                    generate_axis_candidates(merged, /*sort_axis*/0, /*two_lists*/true, pairs);
                 }
                 auto t_pairs_cpu_end = Clock::now();
                 std::vector<uint8_t> mask;
@@ -311,7 +313,7 @@ public:
                 m_overlaps.erase(std::unique(m_overlaps.begin(), m_overlaps.end()), m_overlaps.end());
                 auto t_compose_end = Clock::now();
                 // 记录计时
-                last_timing_.sort_axis = sort_axis;
+                last_timing_.sort_axis = 0;
                 last_timing_.axis_merge_ms = std::chrono::duration<double, std::milli>(t_axis_end - t_axis_start).count();
                 if (last_timing_.pairs_src == "gpu") {
                     last_timing_.pairs_ms = Metal2Runtime::instance().lastSTQPairsMs();
@@ -340,15 +342,17 @@ public:
             }
             if (observe) {
                 // 生成与 CPU 最终结果的差集统计
-                // 需要与上面的 merged/pairs/mask一致，故再次构造
-                sort_boxes_along_axis(sort_axis, a = d_boxesA ? d_boxesA->h_boxes : std::vector<AABB>{});
-                sort_boxes_along_axis(sort_axis, b = d_boxesB ? d_boxesB->h_boxes : std::vector<AABB>{});
+                // 与最终路径保持一致：统一沿 X 轴排序与合并
+                a = d_boxesA ? d_boxesA->h_boxes : std::vector<AABB>{};
+                b = d_boxesB ? d_boxesB->h_boxes : std::vector<AABB>{};
+                auto less_min_x = [](const AABB& x, const AABB& y){ return x.min[0] < y.min[0]; };
+                std::sort(a.begin(), a.end(), less_min_x);
+                std::sort(b.begin(), b.end(), less_min_x);
                 for (auto& ax : a) ax.element_id = -ax.element_id - 1;
                 std::vector<AABB> merged(a.size()+b.size());
-                auto less_min = [=](const AABB& x, const AABB& y){ return x.min[sort_axis] < y.min[sort_axis]; };
-                std::merge(a.begin(), a.end(), b.begin(), b.end(), merged.begin(), less_min);
+                std::merge(a.begin(), a.end(), b.begin(), b.end(), merged.begin(), less_min_x);
                 std::vector<std::pair<int,int>> pairs;
-                generate_axis_candidates(merged, sort_axis, /*two_lists*/true, pairs);
+                generate_axis_candidates(merged, /*sort_axis*/0, /*two_lists*/true, pairs);
                 std::vector<uint8_t> mask;
                 cpu_filter_yz(merged, pairs, /*two_lists*/true, mask);
                 // 规范化为 element_id 对（双列表：有向对 <aid from A, bid from B>）
@@ -415,9 +419,16 @@ public:
             std::vector<AABB> a = d_boxesA ? d_boxesA->h_boxes : std::vector<AABB>{};
             const bool use_stq = (!strict && env_flag_enabled("SCALABLE_CCD_METAL2_USE_STQ", false));
             if (observe && !a.empty()) {
-                sort_boxes_along_axis(sort_axis, a);
+                // OBS 统计：若使用 STQ，与最终路径保持一致（沿 X 轴排序）
+                if (use_stq) {
+                    auto less_min_x = [](const AABB& x, const AABB& y){ return x.min[0] < y.min[0]; };
+                    std::sort(a.begin(), a.end(), less_min_x);
+                    sort_axis = 0;
+                } else {
+                    sort_boxes_along_axis(sort_axis, a);
+                }
                 std::vector<std::pair<int,int>> pairs;
-                generate_axis_candidates(a, sort_axis, /*two_lists*/false, pairs);
+                generate_axis_candidates(a, /*sort_axis*/use_stq?0:sort_axis, /*two_lists*/false, pairs);
                 std::vector<float> minY(a.size()), maxY(a.size());
                 std::vector<float> minZ(a.size()), maxZ(a.size());
                 std::vector<int32_t> v0(a.size()), v1(a.size()), v2(a.size());
@@ -448,8 +459,10 @@ public:
                 sort_and_sweep(std::move(a), sort_axis, m_overlaps);
             } else {
                 auto t_axis_start = Clock::now();
-                // 轴向排序
-                sort_boxes_along_axis(sort_axis, a);
+                // 轴向排序（沿 X）
+                auto less_min_x = [](const AABB& x, const AABB& y){ return x.min[0] < y.min[0]; };
+                std::sort(a.begin(), a.end(), less_min_x);
+                sort_axis = 0;
                 auto t_axis_end = Clock::now();
                 // 候选生成：GPU 优先
                 std::vector<std::pair<int,int>> pairs;
@@ -475,7 +488,7 @@ public:
                 }
                 auto t_pairs_cpu_start = Clock::now();
                 if (!stq_ok) {
-                    generate_axis_candidates(a, sort_axis, /*two_lists*/false, pairs);
+                    generate_axis_candidates(a, /*sort_axis*/0, /*two_lists*/false, pairs);
                 }
                 auto t_pairs_cpu_end = Clock::now();
                 // 过滤（默认 CPU）
@@ -550,9 +563,14 @@ public:
             if (observe) {
                 // 规范化并做差集统计
                 std::vector<AABB> a2 = d_boxesA ? d_boxesA->h_boxes : std::vector<AABB>{};
-                sort_boxes_along_axis(sort_axis, a2);
+                if (use_stq) {
+                    auto less_min_x = [](const AABB& x, const AABB& y){ return x.min[0] < y.min[0]; };
+                    std::sort(a2.begin(), a2.end(), less_min_x);
+                } else {
+                    sort_boxes_along_axis(sort_axis, a2);
+                }
                 std::vector<std::pair<int,int>> pairs;
-                generate_axis_candidates(a2, sort_axis, /*two_lists*/false, pairs);
+                generate_axis_candidates(a2, /*sort_axis*/use_stq?0:sort_axis, /*two_lists*/false, pairs);
                 std::vector<uint8_t> mask;
                 cpu_filter_yz(a2, pairs, /*two_lists*/false, mask);
                 std::vector<std::pair<int,int>> yzPairs;
