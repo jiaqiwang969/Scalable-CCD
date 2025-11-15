@@ -47,6 +47,63 @@ kernel void yzFilter(
   outMask[gid] = share ? 0 : 1;
 }
 )";
+
+static const char* kSTQTwoListsSrc = R"(
+using namespace metal;
+kernel void stqTwo(
+  device const double* minX [[buffer(0)]],
+  device const double* maxX [[buffer(1)]],
+  device const uchar*  listTag [[buffer(2)]], // 1 for A, 0 for B
+  constant uint& baseI [[buffer(3)]],
+  constant uint& n [[buffer(4)]],
+  constant uint& maxN [[buffer(5)]],          // per-i neighbor cap
+  device atomic_uint* gCount [[buffer(6)]],
+  device int2* outPairs [[buffer(7)]],
+  uint gid [[thread_position_in_grid]]
+) {
+  uint i = baseI + gid;
+  if (i >= n) return;
+  uint emitted = 0;
+  double amax = maxX[i];
+  uchar tagi = listTag[i];
+  for (uint j = i + 1; j < n; ++j) {
+    double bmin = minX[j];
+    if (amax < bmin) break; // no more overlap along X
+    if (tagi == listTag[j]) continue; // only cross-list
+    uint pos = atomic_fetch_add_explicit(gCount, 1u, memory_order_relaxed);
+    outPairs[pos] = int2((int)i, (int)j);
+    emitted++;
+    if (emitted >= maxN) break;
+  }
+}
+)";
+
+static const char* kSTQSingleListSrc = R"(
+using namespace metal;
+kernel void stqSingle(
+  device const double* minX [[buffer(0)]],
+  device const double* maxX [[buffer(1)]],
+  constant uint& baseI [[buffer(2)]],
+  constant uint& n [[buffer(3)]],
+  constant uint& maxN [[buffer(4)]],
+  device atomic_uint* gCount [[buffer(5)]],
+  device int2* outPairs [[buffer(6)]],
+  uint gid [[thread_position_in_grid]]
+) {
+  uint i = baseI + gid;
+  if (i >= n) return;
+  uint emitted = 0;
+  double amax = maxX[i];
+  for (uint j = i + 1; j < n; ++j) {
+    double bmin = minX[j];
+    if (amax < bmin) break;
+    uint pos = atomic_fetch_add_explicit(gCount, 1u, memory_order_relaxed);
+    outPairs[pos] = int2((int)i, (int)j);
+    emitted++;
+    if (emitted >= maxN) break;
+  }
+}
+)";
 } // namespace
 
 struct Metal2Runtime::Impl {
@@ -56,7 +113,13 @@ struct Metal2Runtime::Impl {
     id<MTLComputePipelineState> cpsNoop = nil;
     id<MTLLibrary> libYZ = nil;
     id<MTLComputePipelineState> cpsYZ = nil;
+    id<MTLLibrary> libSTQTwo = nil;
+    id<MTLComputePipelineState> cpsSTQTwo = nil;
+    id<MTLLibrary> libSTQSingle = nil;
+    id<MTLComputePipelineState> cpsSTQSingle = nil;
     bool ok = false;
+    double lastYZMs = -1.0;
+    double lastPairsMs = -1.0;
 };
 
 Metal2Runtime& Metal2Runtime::instance()
@@ -186,8 +249,122 @@ bool Metal2Runtime::filterYZ(
         [cb commit];
         [cb waitUntilCompleted];
         memcpy(outMask.data(), [bMask contents], sizeof(uint8_t)*m);
+        // timing
+        CFTimeInterval t0 = cb.GPUStartTime, t1 = cb.GPUEndTime;
+        if (t1 > t0 && t0 > 0) {
+            impl_->lastYZMs = (t1 - t0) * 1000.0;
+        } else {
+            impl_->lastYZMs = -1.0;
+        }
         return true;
     }
 }
+
+bool Metal2Runtime::stqTwoLists(
+    const std::vector<double>& minX,
+    const std::vector<double>& maxX,
+    const std::vector<double>& minY,
+    const std::vector<double>& maxY,
+    const std::vector<double>& minZ,
+    const std::vector<double>& maxZ,
+    const std::vector<int32_t>& v0,
+    const std::vector<int32_t>& v1,
+    const std::vector<int32_t>& v2,
+    const std::vector<uint8_t>& listTag,
+    std::vector<std::pair<int,int>>& outPairs)
+{
+    if (!available()) return false;
+    const size_t n = minX.size();
+    if (n == 0) { outPairs.clear(); return true; }
+    if (maxX.size()!=n || listTag.size()!=n) return false;
+    @autoreleasepool {
+        NSError* err = nil;
+        if (!impl_->cpsSTQTwo) {
+            MTLCompileOptions* opts = [MTLCompileOptions new];
+            impl_->libSTQTwo = [impl_->dev newLibraryWithSource:[NSString stringWithUTF8String:kSTQTwoListsSrc] options:opts error:&err];
+            if (!impl_->libSTQTwo) return false;
+            id<MTLFunction> fn = [impl_->libSTQTwo newFunctionWithName:@"stqTwo"];
+            if (!fn) return false;
+            impl_->cpsSTQTwo = [impl_->dev newComputePipelineStateWithFunction:fn error:&err];
+            if (!impl_->cpsSTQTwo) return false;
+        }
+        // 参数：每个 i 允许最多发 maxN 个邻居，按 chunkI 分批
+        auto envU = [](const char* k, uint32_t def)->uint32_t{
+            const char* v = std::getenv(k); if(!v) return def;
+            try { long long t = std::stoll(v); return t>0 ? (uint32_t)t : def; } catch(...) { return def; }
+        };
+        uint32_t maxN = envU("SCALABLE_CCD_METAL2_STQ_MAX_NEIGHBORS", 64);
+        uint32_t chunkI = envU("SCALABLE_CCD_METAL2_STQ_CHUNK_I", 8192);
+        outPairs.clear();
+        // 设备缓冲（共享内存）
+        id<MTLBuffer> bMinX = [impl_->dev newBufferWithBytes:minX.data() length:sizeof(double)*n options:MTLResourceStorageModeShared];
+        id<MTLBuffer> bMaxX = [impl_->dev newBufferWithBytes:maxX.data() length:sizeof(double)*n options:MTLResourceStorageModeShared];
+        id<MTLBuffer> bTag  = [impl_->dev newBufferWithBytes:listTag.data() length:sizeof(uint8_t)*n options:MTLResourceStorageModeShared];
+
+    for (uint32_t base = 0; base < n; base += chunkI) {
+            uint32_t cur = std::min<uint32_t>(chunkI, static_cast<uint32_t>(n - base));
+            uint64_t cap = static_cast<uint64_t>(cur) * static_cast<uint64_t>(maxN);
+            if (cap == 0) continue;
+            id<MTLBuffer> bBase = [impl_->dev newBufferWithBytes:&base length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> bN    = [impl_->dev newBufferWithBytes:&n length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> bMaxN = [impl_->dev newBufferWithBytes:&maxN length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            uint32_t zero = 0;
+            id<MTLBuffer> bCnt  = [impl_->dev newBufferWithBytes:&zero length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> bPairs = [impl_->dev newBufferWithLength:sizeof(int32_t)*2*cap options:MTLResourceStorageModeShared];
+            id<MTLCommandBuffer> cb = [impl_->q commandBuffer];
+            id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+            [enc setComputePipelineState:impl_->cpsSTQTwo];
+            [enc setBuffer:bMinX offset:0 atIndex:0];
+            [enc setBuffer:bMaxX offset:0 atIndex:1];
+            [enc setBuffer:bTag  offset:0 atIndex:2];
+            [enc setBuffer:bBase offset:0 atIndex:3];
+            [enc setBuffer:bN    offset:0 atIndex:4];
+            [enc setBuffer:bMaxN offset:0 atIndex:5];
+            [enc setBuffer:bCnt  offset:0 atIndex:6];
+            [enc setBuffer:bPairs offset:0 atIndex:7];
+            NSUInteger w = impl_->cpsSTQTwo.maxTotalThreadsPerThreadgroup;
+            if (w == 0) w = 64;
+            MTLSize grid = MTLSizeMake(cur,1,1);
+            MTLSize tg   = MTLSizeMake(std::min<NSUInteger>(w, cur),1,1);
+            [enc dispatchThreads:grid threadsPerThreadgroup:tg];
+            [enc endEncoding];
+            [cb commit];
+            [cb waitUntilCompleted];
+            // 读回 pairs
+            // timing (accumulate)
+            CFTimeInterval t0 = cb.GPUStartTime, t1 = cb.GPUEndTime;
+            if (t1 > t0 && t0 > 0) {
+                double ms = (t1 - t0) * 1000.0;
+                if (impl_->lastPairsMs < 0) impl_->lastPairsMs = 0.0;
+                impl_->lastPairsMs += ms;
+            }
+            uint32_t cnt = *static_cast<uint32_t*>([bCnt contents]);
+            struct I2 { int32_t x; int32_t y; };
+            I2* pp = static_cast<I2*>([bPairs contents]);
+            outPairs.reserve(outPairs.size() + cnt);
+            for (uint32_t i = 0; i < cnt; ++i) outPairs.emplace_back(pp[i].x, pp[i].y);
+        }
+        return true;
+    }
+}
+
+bool Metal2Runtime::stqSingleList(
+    const std::vector<double>&,
+    const std::vector<double>&,
+    const std::vector<double>&,
+    const std::vector<double>&,
+    const std::vector<double>&,
+    const std::vector<double>&,
+    const std::vector<int32_t>&,
+    const std::vector<int32_t>&,
+    const std::vector<int32_t>&,
+    std::vector<std::pair<int,int>>&)
+{
+    // TODO: implement GPU STQ候选生成（单列表）；当前占位返回 false（回退 CPU）
+    return false;
+}
+
+double Metal2Runtime::lastYZFilterMs() const { return impl_ ? impl_->lastYZMs : -1.0; }
+double Metal2Runtime::lastSTQPairsMs() const { return impl_ ? impl_->lastPairsMs : -1.0; }
 
 } // namespace scalable_ccd::metal2

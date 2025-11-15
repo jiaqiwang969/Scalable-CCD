@@ -144,7 +144,29 @@ public:
                 auto less_min = [=](const AABB& x, const AABB& y){ return x.min[sort_axis] < y.min[sort_axis]; };
                 std::merge(a_obs.begin(), a_obs.end(), b_obs.begin(), b_obs.end(), merged.begin(), less_min);
                 std::vector<std::pair<int,int>> pairs;
-                generate_axis_candidates(merged, sort_axis, /*two_lists*/true, pairs);
+                bool stq_ok = false;
+                if (Metal2Runtime::instance().available()) {
+                    std::vector<double> minX(merged.size()), maxX(merged.size());
+                    std::vector<double> minYd(merged.size()), maxYd(merged.size());
+                    std::vector<double> minZd(merged.size()), maxZd(merged.size());
+                    std::vector<int32_t> v0(merged.size()), v1(merged.size()), v2(merged.size());
+                    std::vector<uint8_t> listTag(merged.size());
+                    for (size_t i=0;i<merged.size();++i){
+                        minX[i] = merged[i].min[0]; maxX[i] = merged[i].max[0];
+                        minYd[i] = merged[i].min[1]; maxYd[i] = merged[i].max[1];
+                        double miZ = merged[i].min.size() >= 3 ? merged[i].min[2] : merged[i].min[1];
+                        double maZ = merged[i].max.size() >= 3 ? merged[i].max[2] : merged[i].max[1];
+                        minZd[i] = miZ; maxZd[i] = maZ;
+                        v0[i] = static_cast<int32_t>(merged[i].vertex_ids[0]);
+                        v1[i] = static_cast<int32_t>(merged[i].vertex_ids[1]);
+                        v2[i] = static_cast<int32_t>(merged[i].vertex_ids[2]);
+                        listTag[i] = merged[i].element_id < 0 ? 1 : 0;
+                    }
+                    stq_ok = Metal2Runtime::instance().stqTwoLists(minX,maxX,minYd,maxYd,minZd,maxZd,v0,v1,v2,listTag,pairs);
+                }
+                if (!stq_ok) {
+                    generate_axis_candidates(merged, sort_axis, /*two_lists*/true, pairs);
+                }
                 // 准备 GPU/CPU YZ 过滤输入
                 std::vector<float> minY(merged.size()), maxY(merged.size());
                 std::vector<float> minZ(merged.size()), maxZ(merged.size());

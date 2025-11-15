@@ -27,6 +27,38 @@ public:
         bool two_lists,
         std::vector<uint8_t>& outMask);
 
+    // STQ（sweep_and_tiniest_queue）候选生成（占位；当前返回 false，回退 CPU）
+    // 两列表：输入为合并后的 boxes（A 列表的 element_id 已翻转为负），输出索引对(i,j)
+    bool stqTwoLists(
+        const std::vector<double>& minX,
+        const std::vector<double>& maxX,
+        const std::vector<double>& minY,
+        const std::vector<double>& maxY,
+        const std::vector<double>& minZ,
+        const std::vector<double>& maxZ,
+        const std::vector<int32_t>& v0,
+        const std::vector<int32_t>& v1,
+        const std::vector<int32_t>& v2,
+        const std::vector<uint8_t>& listTag,
+        std::vector<std::pair<int,int>>& outPairs);
+
+    // 单列表：输入为单列表 boxes，输出索引对(i,j)
+    bool stqSingleList(
+        const std::vector<double>& minX,
+        const std::vector<double>& maxX,
+        const std::vector<double>& minY,
+        const std::vector<double>& maxY,
+        const std::vector<double>& minZ,
+        const std::vector<double>& maxZ,
+        const std::vector<int32_t>& v0,
+        const std::vector<int32_t>& v1,
+        const std::vector<int32_t>& v2,
+        std::vector<std::pair<int,int>>& outPairs);
+
+    // 最近一次 GPU 调用的计时（毫秒），若无则返回 <0
+    double lastYZFilterMs() const;
+    double lastSTQPairsMs() const;
+
 private:
     Metal2Runtime();
     ~Metal2Runtime();
