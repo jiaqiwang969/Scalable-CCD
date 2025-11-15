@@ -132,13 +132,15 @@ public:
             std::vector<AABB> b = d_boxesB ? d_boxesB->h_boxes : std::vector<AABB>{};
             if (observe && !a.empty() && !b.empty()) {
                 // 观测：轴向候选 + CPU YZ filter 统计
-                sort_boxes_along_axis(sort_axis, a);
-                sort_boxes_along_axis(sort_axis, b);
+                std::vector<AABB> a_obs = a;
+                std::vector<AABB> b_obs = b;
+                sort_boxes_along_axis(sort_axis, a_obs);
+                sort_boxes_along_axis(sort_axis, b_obs);
                 // Flip A ids and merge（与 CPU 路径一致）
-                for (auto& ax : a) ax.element_id = -ax.element_id - 1;
-                std::vector<AABB> merged(a.size()+b.size());
+                for (auto& ax : a_obs) ax.element_id = -ax.element_id - 1;
+                std::vector<AABB> merged(a_obs.size()+b_obs.size());
                 auto less_min = [=](const AABB& x, const AABB& y){ return x.min[sort_axis] < y.min[sort_axis]; };
-                std::merge(a.begin(), a.end(), b.begin(), b.end(), merged.begin(), less_min);
+                std::merge(a_obs.begin(), a_obs.end(), b_obs.begin(), b_obs.end(), merged.begin(), less_min);
                 std::vector<std::pair<int,int>> pairs;
                 generate_axis_candidates(merged, sort_axis, /*two_lists*/true, pairs);
                 // 准备 GPU/CPU YZ 过滤输入
@@ -195,19 +197,20 @@ public:
                 generate_axis_candidates(merged, sort_axis, /*two_lists*/true, pairs);
                 std::vector<uint8_t> mask;
                 cpu_filter_yz(merged, pairs, /*two_lists*/true, mask);
-                // 规范化为 element_id 对（小到大）
+                // 规范化为 element_id 对（双列表：有向对 <aid from A, bid from B>）
                 std::vector<std::pair<int,int>> yzPairs;
                 yzPairs.reserve(pairs.size());
                 for (size_t i=0;i<pairs.size();++i){
                     if (!mask[i]) continue;
                     const auto& A = merged[pairs[i].first];
                     const auto& B = merged[pairs[i].second];
+                    // exactly one is negative (from list A)
                     const bool a_from_A = (A.element_id < 0);
-                    int ida = a_from_A ? -static_cast<int>(A.element_id) - 1 : static_cast<int>(A.element_id);
-                    int idb = (B.element_id < 0) ? -static_cast<int>(B.element_id) - 1 : static_cast<int>(B.element_id);
-                    int aN = std::min(ida, idb);
-                    int bN = std::max(ida, idb);
-                    yzPairs.emplace_back(aN, bN);
+                    const int aid = a_from_A ? (-static_cast<int>(A.element_id) - 1)
+                                             : (-static_cast<int>(B.element_id) - 1);
+                    const int bid = a_from_A ? static_cast<int>(B.element_id)
+                                             : static_cast<int>(A.element_id);
+                    yzPairs.emplace_back(aid, bid);
                 }
                 std::sort(yzPairs.begin(), yzPairs.end());
                 yzPairs.erase(std::unique(yzPairs.begin(), yzPairs.end()), yzPairs.end());
