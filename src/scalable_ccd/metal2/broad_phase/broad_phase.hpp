@@ -184,8 +184,61 @@ public:
                 logger().info("Metal2 Broad-phase OBS(two): axis_pairs={} yz_kept={}", pairs.size(), kept);
                 // 与最终集合做差集（最终集合稍后计算）
                 }
-            // 最终结果（严格模式下回退 CPU）
-            sort_and_sweep(std::move(a), std::move(b), sort_axis, m_overlaps);
+            // 最终结果：严格或未启用 STQ -> 回退 CPU；否则使用 轴候选+过滤 产出
+            if (!strict && env_flag_enabled("SCALABLE_CCD_METAL2_USE_STQ", false)) {
+                // 使用与观测一致的管线生成最终输出
+                std::vector<AABB> a_final = a;
+                std::vector<AABB> b_final = b;
+                sort_boxes_along_axis(sort_axis, a_final);
+                sort_boxes_along_axis(sort_axis, b_final);
+                for (auto& ax : a_final) ax.element_id = -ax.element_id - 1;
+                std::vector<AABB> merged(a_final.size()+b_final.size());
+                auto less_min = [=](const AABB& x, const AABB& y){ return x.min[sort_axis] < y.min[sort_axis]; };
+                std::merge(a_final.begin(), a_final.end(), b_final.begin(), b_final.end(), merged.begin(), less_min);
+                std::vector<std::pair<int,int>> pairs;
+                generate_axis_candidates(merged, sort_axis, /*two_lists*/true, pairs);
+                std::vector<uint8_t> mask;
+                bool ok=false;
+                // 过滤使用 CPU 或 GPU（默认 CPU）
+                std::vector<float> minY(merged.size()), maxY(merged.size());
+                std::vector<float> minZ(merged.size()), maxZ(merged.size());
+                std::vector<int32_t> v0(merged.size()), v1(merged.size()), v2(merged.size());
+                for (size_t i=0;i<merged.size();++i){
+                    minY[i] = static_cast<float>(merged[i].min[1]);
+                    maxY[i] = static_cast<float>(merged[i].max[1]);
+                    double miZ = merged[i].min.size() >= 3 ? merged[i].min[2] : merged[i].min[1];
+                    double maZ = merged[i].max.size() >= 3 ? merged[i].max[2] : merged[i].max[1];
+                    minZ[i] = static_cast<float>(miZ);
+                    maxZ[i] = static_cast<float>(maZ);
+                    v0[i] = static_cast<int32_t>(merged[i].vertex_ids[0]);
+                    v1[i] = static_cast<int32_t>(merged[i].vertex_ids[1]);
+                    v2[i] = static_cast<int32_t>(merged[i].vertex_ids[2]);
+                }
+                const int sel = [](){ const char* v=getenv("SCALABLE_CCD_METAL2_FILTER"); if(!v) return 1; std::string s(v); for(auto&c:s) c=(char)tolower((unsigned char)c); if(s=="gpu") return 2; if(s=="off") return 0; return 1;}();
+                if (sel==2 && Metal2Runtime::instance().available() && Metal2Runtime::instance().warmup()){
+                    ok = Metal2Runtime::instance().filterYZ(minY,maxY,minZ,maxZ,v0,v1,v2,pairs,true,mask);
+                }
+                if (!ok){
+                    cpu_filter_yz(merged, pairs, /*two_lists*/true, mask);
+                }
+                m_overlaps.clear();
+                m_overlaps.reserve(pairs.size());
+                for (size_t i=0;i<pairs.size();++i){
+                    if (!mask[i]) continue;
+                    const AABB& A0 = merged[pairs[i].first];
+                    const AABB& B0 = merged[pairs[i].second];
+                    const bool a_from_A = (A0.element_id < 0);
+                    const int aid = a_from_A ? (-static_cast<int>(A0.element_id) - 1)
+                                             : (-static_cast<int>(B0.element_id) - 1);
+                    const int bid = a_from_A ? static_cast<int>(B0.element_id)
+                                             : static_cast<int>(A0.element_id);
+                    m_overlaps.emplace_back(aid, bid);
+                }
+                std::sort(m_overlaps.begin(), m_overlaps.end());
+                m_overlaps.erase(std::unique(m_overlaps.begin(), m_overlaps.end()), m_overlaps.end());
+            } else {
+                sort_and_sweep(std::move(a), std::move(b), sort_axis, m_overlaps);
+            }
             if (observe) {
                 // 生成与 CPU 最终结果的差集统计
                 // 需要与上面的 merged/pairs/mask一致，故再次构造
