@@ -22,6 +22,27 @@ class BroadPhase {
 public:
     BroadPhase() = default;
 
+    static bool env_flag_enabled(const char* key, bool def)
+    {
+        const char* v = std::getenv(key);
+        if (!v) return def;
+        std::string s(v);
+        for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        if (s.empty()) return true;
+        if (s=="0" || s=="false" || s=="off" || s=="no") return false;
+        return true;
+    }
+    static int filterSel(const char* key)
+    {
+        const char* v = std::getenv(key);
+        if (!v) return 0; // default off for safety
+        std::string s(v);
+        for (auto& c : s) c = (char)std::tolower((unsigned char)c);
+        if (s=="gpu") return 2;
+        if (s=="cpu") return 1;
+        return 0; // off
+    }
+
     void clear()
     {
         d_boxesA.reset();
@@ -112,8 +133,9 @@ public:
         if (is_two_lists) {
             std::vector<AABB> a = d_boxesA ? d_boxesA->h_boxes : std::vector<AABB>{};
             std::vector<AABB> b = d_boxesB ? d_boxesB->h_boxes : std::vector<AABB>{};
-            // OBS：沿 X 轴排序 + 候选 + 过滤（GPU 优先，仅观测打印）
-            if (!a.empty() && !b.empty()) {
+            // OBS：沿 X 轴排序 + 候选 + 过滤（仅观测；默认关闭，需 SCALABLE_CCD_METALCPP_OBSERVE=1 手动开启）
+            const bool observe = env_flag_enabled("SCALABLE_CCD_METALCPP_OBSERVE", false);
+            if (observe && !a.empty() && !b.empty()) {
                 std::vector<AABB> a_obs = a, b_obs = b;
                 sort_along_x(a_obs); sort_along_x(b_obs);
                 for (auto& ax : a_obs) ax.element_id = -ax.element_id - 1;
@@ -124,7 +146,8 @@ public:
                 axis_candidates(merged, /*two*/true, pairs);
                 std::vector<uint8_t> mask;
                 bool ok = false;
-                if (MetalCppRuntime::instance().available() && MetalCppRuntime::instance().warmup()) {
+                const int sel = filterSel("SCALABLE_CCD_METALCPP_FILTER"); // off|cpu|gpu; default off
+                if (sel == 2 && MetalCppRuntime::instance().available() && MetalCppRuntime::instance().warmup()) {
                     std::vector<float> minY(merged.size()), maxY(merged.size());
                     std::vector<float> minZ(merged.size()), maxZ(merged.size());
                     std::vector<int32_t> v0(merged.size()), v1(merged.size()), v2(merged.size());
@@ -141,16 +164,22 @@ public:
                     }
                     ok = MetalCppRuntime::instance().filterYZ(minY,maxY,minZ,maxZ,v0,v1,v2,pairs,true,mask);
                 }
-                if (!ok) cpu_filter_yz(merged, pairs, true, mask);
-                size_t kept = 0; for (auto m:mask) if (m) ++kept;
-                logger().info("Metal-cpp Broad-phase OBS(two): axis_pairs={} yz_kept={}", pairs.size(), kept);
+                if (!ok && sel != 0) cpu_filter_yz(merged, pairs, true, mask);
+                if (sel == 0) {
+                    // 只计数 axis_pairs，避免大规模分配
+                    logger().info("Metal-cpp Broad-phase OBS(two): axis_pairs={} (filter=off)", pairs.size());
+                } else {
+                    size_t kept = 0; for (auto m:mask) if (m) ++kept;
+                    logger().info("Metal-cpp Broad-phase OBS(two): axis_pairs={} yz_kept={} (filter={})", pairs.size(), kept, (sel==2?"gpu":"cpu"));
+                }
             }
             // FINAL：CPU sort_and_sweep（严格正确性）
             int sort_axis = 0;
             sort_and_sweep(std::move(a), std::move(b), sort_axis, m_overlaps);
         } else {
             std::vector<AABB> a = d_boxesA ? d_boxesA->h_boxes : std::vector<AABB>{};
-            if (!a.empty()) {
+            const bool observe = env_flag_enabled("SCALABLE_CCD_METALCPP_OBSERVE", false);
+            if (observe && !a.empty()) {
                 std::vector<AABB> a_obs = a;
                 sort_along_x(a_obs);
                 std::vector<std::pair<int,int>> pairs;
@@ -171,12 +200,17 @@ public:
                 }
                 std::vector<uint8_t> mask;
                 bool ok = false;
-                if (MetalCppRuntime::instance().available() && MetalCppRuntime::instance().warmup()) {
+                const int sel = filterSel("SCALABLE_CCD_METALCPP_FILTER"); // default off
+                if (sel == 2 && MetalCppRuntime::instance().available() && MetalCppRuntime::instance().warmup()) {
                     ok = MetalCppRuntime::instance().filterYZ(minY,maxY,minZ,maxZ,v0,v1,v2,pairs,false,mask);
                 }
-                if (!ok) cpu_filter_yz(a_obs, pairs, false, mask);
-                size_t kept = 0; for (auto m:mask) if (m) ++kept;
-                logger().info("Metal-cpp Broad-phase OBS(single): axis_pairs={} yz_kept={}", pairs.size(), kept);
+                if (!ok && sel!=0) cpu_filter_yz(a_obs, pairs, false, mask);
+                if (sel==0) {
+                    logger().info("Metal-cpp Broad-phase OBS(single): axis_pairs={} (filter=off)", pairs.size());
+                } else {
+                    size_t kept = 0; for (auto m:mask) if (m) ++kept;
+                    logger().info("Metal-cpp Broad-phase OBS(single): axis_pairs={} yz_kept={} (filter={})", pairs.size(), kept, (sel==2?"gpu":"cpu"));
+                }
             }
             int sort_axis = 0;
             sort_and_sweep(std::move(a), sort_axis, m_overlaps);
