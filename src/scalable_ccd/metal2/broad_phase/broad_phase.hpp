@@ -109,16 +109,8 @@ public:
                 overlapZ = !(A.max[2] < B.min[2] || A.min[2] > B.max[2]);
             }
             if (!overlapY || !overlapZ) continue;
-            if (!two_lists) {
-                if (share_a_vertex(A.vertex_ids, B.vertex_ids)) continue;
-                int a = (int)std::min<long>(A.element_id, B.element_id);
-                int b = (int)std::max<long>(A.element_id, B.element_id);
-                (void)a; (void)b;
-            } else {
-                // 两列表：保留跨列表的对
-                // element_id: 列表 A 用负号翻转，B 为非负
-                // 输出统一在跨列表语义下再规范（不在此函数中处理）
-            }
+            // 与 CPU 路径一致：两列表/单列表均剔除共享顶点对
+            if (share_a_vertex(A.vertex_ids, B.vertex_ids)) continue;
             outMask[k] = 1;
         }
     }
@@ -252,7 +244,12 @@ public:
                         (double)(AA->min.size()>=3?AA->min[2]:AA->min[1]), (double)(AA->max.size()>=3?AA->max[2]:AA->max[1]),
                         (double)(BB->min.size()>=3?BB->min[2]:BB->min[1]), (double)(BB->max.size()>=3?BB->max[2]:BB->max[1]));
                 };
-                int sample_n = 5;
+                auto env_sample = []()->int{
+                    const char* v = std::getenv("SCALABLE_CCD_METAL2_SAMPLE");
+                    if (!v) return 5;
+                    try { int k = std::stoi(v); return k>0 ? k : 5; } catch(...) { return 5; }
+                };
+                int sample_n = env_sample();
                 int c1 = 0; for (const auto& p : yz_only) { if (c1++ >= sample_n) break; print_sample_two(p, "yz_only"); }
                 int c2 = 0; for (const auto& p : final_only) { if (c2++ >= sample_n) break; print_sample_two(p, "final_only"); }
             }
@@ -335,7 +332,12 @@ public:
                         (double)(A->min.size()>=3?A->min[2]:A->min[1]), (double)(A->max.size()>=3?A->max[2]:A->max[1]),
                         (double)(B->min.size()>=3?B->min[2]:B->min[1]), (double)(B->max.size()>=3?B->max[2]:B->max[1]));
                 };
-                int sample_n = 5;
+                auto env_sample = []()->int{
+                    const char* v = std::getenv("SCALABLE_CCD_METAL2_SAMPLE");
+                    if (!v) return 5;
+                    try { int k = std::stoi(v); return k>0 ? k : 5; } catch(...) { return 5; }
+                };
+                int sample_n = env_sample();
                 int c1 = 0; for (const auto& p : yz_only) { if (c1++ >= sample_n) break; print_sample_single(p, "yz_only"); }
                 int c2 = 0; for (const auto& p : final_only) { if (c2++ >= sample_n) break; print_sample_single(p, "final_only"); }
             }

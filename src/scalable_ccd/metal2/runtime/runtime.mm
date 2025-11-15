@@ -37,17 +37,14 @@ kernel void yzFilter(
   bool overlapY = !(maxYi < minYj || minYi > maxYj);
   bool overlapZ = !(maxZi < minZj || minZi > maxZj);
   if (!(overlapY && overlapZ)) { outMask[gid] = 0; return; }
-  if (twoLists == 0u) {
-    int3 ai = vids[i];
-    int3 aj = vids[j];
-    bool share =
-      (ai.x == aj.x) || (ai.x == aj.y) || (ai.x == aj.z) ||
-      (ai.y == aj.x) || (ai.y == aj.y) || (ai.y == aj.z) ||
-      (ai.z == aj.x) || (ai.z == aj.y) || (ai.z == aj.z);
-    outMask[gid] = share ? 0 : 1;
-  } else {
-    outMask[gid] = 1;
-  }
+  // 与 CPU 一致：无论单/双列表均剔除共享顶点
+  int3 ai = vids[i];
+  int3 aj = vids[j];
+  bool share =
+    (ai.x == aj.x) || (ai.x == aj.y) || (ai.x == aj.z) ||
+    (ai.y == aj.x) || (ai.y == aj.y) || (ai.y == aj.z) ||
+    (ai.z == aj.x) || (ai.z == aj.y) || (ai.z == aj.z);
+  outMask[gid] = share ? 0 : 1;
 }
 )";
 } // namespace
