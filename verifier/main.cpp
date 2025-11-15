@@ -21,6 +21,14 @@
 #include <scalable_ccd/cuda/broad_phase/aabb.cuh>
 #include <scalable_ccd/cuda/memory_handler.hpp>
 #endif
+#ifdef SCALABLE_CCD_WITH_METAL
+#include <scalable_ccd/metal/broad_phase/broad_phase.hpp>
+#include <scalable_ccd/metal/broad_phase/aabb.hpp>
+#endif
+#ifdef SCALABLE_CCD_WITH_METAL2
+#include <scalable_ccd/metal2/broad_phase/broad_phase.hpp>
+#include <scalable_ccd/metal2/broad_phase/aabb.hpp>
+#endif
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -80,7 +88,7 @@ static bool load_scenarios_json(const fs::path& path, std::vector<SceneCase>& ou
 
 static void usage(const char* argv0)
 {
-    std::cout << "用法: " << argv0 << " [--backend cpu|cuda|both] [--out DIR] [--log N] [--threads N]\n";
+    std::cout << "用法: " << argv0 << " [--backend cpu|cuda|both|metal|metal2] [--out DIR] [--log N] [--threads N]\n";
     std::cout << "                 [--repeat N] [--warmup N] [--scenarios FILE] [--scan]\n";
     std::cout << "                 [--max-per-scene N] [--tag NAME] [--data DIR]\n";
     std::cout << "说明: 读取 SCALABLE_CCD_DATA_DIR 下的样例场景，生成验证报告。\n";
@@ -533,6 +541,252 @@ int main(int argc, char** argv)
 #else
         (void)backend;
 #endif
+
+        // ---------------- Metal Broad Phase ----------------
+        if (backend == "metal") {
+#ifdef SCALABLE_CCD_WITH_METAL
+            std::vector<scalable_ccd::AABB> vboxes, eboxes, fboxes;
+            double build_boxes_ms = 0.0;
+            {
+                scalable_ccd::Timer t;
+                t.start();
+                verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
+                t.stop();
+                build_boxes_ms = t.getElapsedTimeInMilliSec();
+                spdlog::info("[METAL] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
+                             s.scene, build_boxes_ms, vboxes.size(), eboxes.size(), fboxes.size());
+            }
+            // VF
+            {
+                scalable_ccd::metal::BroadPhase bp;
+                auto dV = std::make_shared<scalable_ccd::metal::DeviceAABBs>(vboxes);
+                auto dF = std::make_shared<scalable_ccd::metal::DeviceAABBs>(fboxes);
+                // warmup
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    (void)bp.detect_overlaps();
+                }
+                // repeats
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int,int>> vf_overlaps;
+                int sort_axis = 0; // for compatibility with report schema
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    scalable_ccd::Timer t; t.start();
+                    vf_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                double avg_ms = 0.0;
+                for (double x : times) avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                // Offset to match ground-truth encoding (see tests)
+                {
+                    int offset = static_cast<int>(vboxes.size() + eboxes.size());
+                    for (auto& p : vf_overlaps) {
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metal";
+                run["steps"] = {
+                    {"stage","broad_vf"},
+                    {"avg_ms", avg_ms},
+                    {"repeats", repeat},
+                    {"warmup", warmup},
+                    {"build_boxes_ms", build_boxes_ms},
+                    {"sort_axis_end", sort_axis}
+                };
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
+                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                aggregate["runs"].push_back(run);
+            }
+            // EE
+            {
+                scalable_ccd::metal::BroadPhase bp;
+                auto dE = std::make_shared<scalable_ccd::metal::DeviceAABBs>(eboxes);
+                // warmup
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dE);
+                    (void)bp.detect_overlaps();
+                }
+                // repeats
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int,int>> ee_overlaps;
+                int sort_axis_ee = 0; // 与报告一致
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dE);
+                    scalable_ccd::Timer t; t.start();
+                    ee_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                double avg_ms = 0.0;
+                for (double x : times) avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                // Offset to match ground-truth encoding (see tests)
+                {
+                    int offset = static_cast<int>(vboxes.size());
+                    for (auto& p : ee_overlaps) {
+                        p.first += offset;
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metal";
+                run["steps"] = {
+                    {"stage","broad_ee"},
+                    {"avg_ms", avg_ms},
+                    {"repeats", repeat},
+                    {"warmup", warmup},
+                    {"build_boxes_ms", build_boxes_ms},
+                    {"sort_axis_end", sort_axis_ee}
+                };
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
+                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                aggregate["runs"].push_back(run);
+            }
+#else
+            spdlog::warn("Metal 后端未编译（缺少 SCALABLE_CCD_WITH_METAL 或非 Apple 平台），跳过 Metal 验证。");
+#endif
+        }
+
+        // ---------------- Metal2 Broad Phase (strict correctness by default) ----------------
+        if (backend == "metal2") {
+#ifdef SCALABLE_CCD_WITH_METAL2
+            std::vector<scalable_ccd::AABB> vboxes, eboxes, fboxes;
+            double build_boxes_ms = 0.0;
+            {
+                scalable_ccd::Timer t;
+                t.start();
+                verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
+                t.stop();
+                build_boxes_ms = t.getElapsedTimeInMilliSec();
+                spdlog::info("[METAL2] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
+                             s.scene, build_boxes_ms, vboxes.size(), eboxes.size(), fboxes.size());
+            }
+            // VF
+            {
+                scalable_ccd::metal2::BroadPhase bp;
+                auto dV = std::make_shared<scalable_ccd::metal2::DeviceAABBs>(vboxes);
+                auto dF = std::make_shared<scalable_ccd::metal2::DeviceAABBs>(fboxes);
+                // warmup
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    (void)bp.detect_overlaps();
+                }
+                // repeats
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int,int>> vf_overlaps;
+                int sort_axis = 0; // for schema
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    scalable_ccd::Timer t; t.start();
+                    vf_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                double avg_ms = 0.0;
+                for (double x : times) avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                // Offset like tests
+                {
+                    int offset = static_cast<int>(vboxes.size() + eboxes.size());
+                    for (auto& p : vf_overlaps) {
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metal2";
+                run["steps"] = {
+                    {"stage","broad_vf"},
+                    {"avg_ms", avg_ms},
+                    {"repeats", repeat},
+                    {"warmup", warmup},
+                    {"build_boxes_ms", build_boxes_ms},
+                    {"sort_axis_end", sort_axis}
+                };
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
+                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                aggregate["runs"].push_back(run);
+            }
+            // EE
+            {
+                scalable_ccd::metal2::BroadPhase bp;
+                auto dE = std::make_shared<scalable_ccd::metal2::DeviceAABBs>(eboxes);
+                // warmup
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dE);
+                    (void)bp.detect_overlaps();
+                }
+                // repeats
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int,int>> ee_overlaps;
+                int sort_axis_ee = 0;
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dE);
+                    scalable_ccd::Timer t; t.start();
+                    ee_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                double avg_ms = 0.0;
+                for (double x : times) avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                // Offset like tests
+                {
+                    int offset = static_cast<int>(vboxes.size());
+                    for (auto& p : ee_overlaps) {
+                        p.first += offset;
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metal2";
+                run["steps"] = {
+                    {"stage","broad_ee"},
+                    {"avg_ms", avg_ms},
+                    {"repeats", repeat},
+                    {"warmup", warmup},
+                    {"build_boxes_ms", build_boxes_ms},
+                    {"sort_axis_end", sort_axis_ee}
+                };
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
+                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                aggregate["runs"].push_back(run);
+            }
+#else
+            spdlog::warn("Metal2 后端未编译（缺少 SCALABLE_CCD_WITH_METAL2 或非 Apple 平台），跳过 Metal2 验证。");
+#endif
+        }
 
         // ---------------- Per-Query Verification (optional) ----------------
         if (run_queries) {

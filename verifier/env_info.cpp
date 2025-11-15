@@ -17,6 +17,12 @@
 #ifdef SCALABLE_CCD_WITH_CUDA
 #include <cuda_runtime.h>
 #endif
+#ifdef SCALABLE_CCD_WITH_METAL
+#include <scalable_ccd/metal/runtime/runtime.hpp>
+#endif
+#ifdef SCALABLE_CCD_WITH_METAL2
+// metal2 当前仅占位，无设备查询；仅标注构建存在
+#endif
 
 namespace {
 
@@ -123,6 +129,16 @@ nlohmann::json collect_env_info()
 #else
     j["build"]["with_cuda"] = false;
 #endif
+#ifdef SCALABLE_CCD_WITH_METAL
+    j["build"]["with_metal"] = true;
+#else
+    j["build"]["with_metal"] = false;
+#endif
+#ifdef SCALABLE_CCD_WITH_METAL2
+    j["build"]["with_metal2"] = true;
+#else
+    j["build"]["with_metal2"] = false;
+#endif
 
 #ifdef SCALABLE_CCD_WITH_CUDA
     // CUDA info
@@ -151,8 +167,21 @@ nlohmann::json collect_env_info()
     }
 #endif
 
+    // Metal info (best-effort; only on Apple + when compiled with Metal)
+#ifdef SCALABLE_CCD_WITH_METAL
+    try {
+        const auto& rt = scalable_ccd::metal::MetalRuntime::instance();
+        bool ok = rt.available();
+        j["metal"]["available"] = ok;
+        if (ok) {
+            j["metal"]["device_name"] = rt.device_name();
+        }
+    } catch (...) {
+        // ignore
+    }
+#endif
+
     return j;
 }
 
 } // namespace verifier
-
