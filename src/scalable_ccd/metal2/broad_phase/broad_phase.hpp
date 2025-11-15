@@ -103,12 +103,14 @@ public:
             const auto& pr = pairs[k];
             const auto& A = boxes[pr.first];
             const auto& B = boxes[pr.second];
+            // 3D 轴向重叠：X/Y/Z 都用闭区间
+            bool overlapX = !(A.max[0] < B.min[0] || A.min[0] > B.max[0]);
             bool overlapY = !(A.max[1] < B.min[1] || A.min[1] > B.max[1]);
             bool overlapZ = true;
             if (A.min.size() >= 3) {
                 overlapZ = !(A.max[2] < B.min[2] || A.min[2] > B.max[2]);
             }
-            if (!overlapY || !overlapZ) continue;
+            if (!overlapX || !overlapY || !overlapZ) continue;
             // 与 CPU 路径一致：两列表/单列表均剔除共享顶点对
             if (share_a_vertex(A.vertex_ids, B.vertex_ids)) continue;
             outMask[k] = 1;
