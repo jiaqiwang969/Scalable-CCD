@@ -29,6 +29,10 @@
 #include <scalable_ccd/metal2/broad_phase/broad_phase.hpp>
 #include <scalable_ccd/metal2/broad_phase/aabb.hpp>
 #endif
+#ifdef SCALABLE_CCD_WITH_METALCPP
+#include <scalable_ccd/metalcpp/broad_phase/broad_phase.hpp>
+#include <scalable_ccd/metalcpp/broad_phase/aabb.hpp>
+#endif
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
@@ -88,7 +92,7 @@ static bool load_scenarios_json(const fs::path& path, std::vector<SceneCase>& ou
 
 static void usage(const char* argv0)
 {
-    std::cout << "用法: " << argv0 << " [--backend cpu|cuda|both|metal|metal2] [--out DIR] [--log N] [--threads N]\n";
+    std::cout << "用法: " << argv0 << " [--backend cpu|cuda|both|metal|metal2|metalcpp] [--out DIR] [--log N] [--threads N]\n";
     std::cout << "                 [--repeat N] [--warmup N] [--scenarios FILE] [--scan]\n";
     std::cout << "                 [--max-per-scene N] [--tag NAME] [--data DIR]\n";
     std::cout << "说明: 读取 SCALABLE_CCD_DATA_DIR 下的样例场景，生成验证报告。\n";
@@ -809,6 +813,118 @@ int main(int argc, char** argv)
 #endif
         }
 
+        // ---------------- Metal-cpp Broad Phase (strict correctness by default) ----------------
+        if (backend == "metalcpp") {
+#ifdef SCALABLE_CCD_WITH_METALCPP
+            std::vector<scalable_ccd::AABB> vboxes, eboxes, fboxes;
+            double build_boxes_ms = 0.0;
+            {
+                scalable_ccd::Timer t;
+                t.start();
+                verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
+                t.stop();
+                build_boxes_ms = t.getElapsedTimeInMilliSec();
+                spdlog::info("[METALCPP] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
+                             s.scene, build_boxes_ms, vboxes.size(), eboxes.size(), fboxes.size());
+            }
+            // VF
+            {
+                scalable_ccd::metalcpp::BroadPhase bp;
+                auto dV = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(vboxes);
+                auto dF = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(fboxes);
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    (void)bp.detect_overlaps();
+                }
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int,int>> vf_overlaps;
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    scalable_ccd::Timer t; t.start();
+                    vf_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                double avg_ms = 0.0;
+                for (double x : times) avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                {
+                    int offset = static_cast<int>(vboxes.size() + eboxes.size());
+                    for (auto& p : vf_overlaps) {
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metalcpp";
+                run["steps"] = {
+                    {"stage","broad_vf"},
+                    {"avg_ms", avg_ms},
+                    {"repeats", repeat},
+                    {"warmup", warmup},
+                    {"build_boxes_ms", build_boxes_ms}
+                };
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
+                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                aggregate["runs"].push_back(run);
+            }
+            // EE
+            {
+                scalable_ccd::metalcpp::BroadPhase bp;
+                auto dE = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(eboxes);
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dE);
+                    (void)bp.detect_overlaps();
+                }
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int,int>> ee_overlaps;
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dE);
+                    scalable_ccd::Timer t; t.start();
+                    ee_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                double avg_ms = 0.0;
+                for (double x : times) avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                {
+                    int offset = static_cast<int>(vboxes.size());
+                    for (auto& p : ee_overlaps) {
+                        p.first += offset;
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metalcpp";
+                run["steps"] = {
+                    {"stage","broad_ee"},
+                    {"avg_ms", avg_ms},
+                    {"repeats", repeat},
+                    {"warmup", warmup},
+                    {"build_boxes_ms", build_boxes_ms}
+                };
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
+                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                aggregate["runs"].push_back(run);
+            }
+#else
+            spdlog::warn("Metal-cpp 后端未编译（缺少 SCALABLE_CCD_WITH_METALCPP 或非 Apple 平台），跳过 Metal-cpp 验证。");
+#endif
+        }
         // ---------------- Per-Query Verification (optional) ----------------
         if (run_queries) {
 #ifdef SCALABLE_CCD_WITH_CUDA
