@@ -703,6 +703,7 @@ int main(int argc, char** argv)
                     t.stop();
                     times.push_back(t.getElapsedTimeInMilliSec());
                 }
+                auto timing = bp.last_timing();
                 double avg_ms = 0.0;
                 for (double x : times) avg_ms += x;
                 avg_ms /= std::max(1, (int)times.size());
@@ -726,6 +727,16 @@ int main(int argc, char** argv)
                     {"build_boxes_ms", build_boxes_ms},
                     {"sort_axis_end", sort_axis}
                 };
+                // Metal2 细分计时（可选）
+                if (timing.total_ms >= 0.0) {
+                    run["steps"]["axis_merge_ms"] = timing.axis_merge_ms;
+                    run["steps"]["pairs_ms"] = timing.pairs_ms;
+                    run["steps"]["pairs_src"] = timing.pairs_src;
+                    run["steps"]["filter_ms"] = timing.filter_ms;
+                    run["steps"]["filter_src"] = timing.filter_src;
+                    run["steps"]["compose_ms"] = timing.compose_ms;
+                    run["steps"]["total_ms_m2"] = timing.total_ms;
+                }
                 run["threads"] = num_threads;
                 auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
                 run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
@@ -754,6 +765,7 @@ int main(int argc, char** argv)
                     t.stop();
                     times.push_back(t.getElapsedTimeInMilliSec());
                 }
+                auto timing_ee = bp.last_timing();
                 double avg_ms = 0.0;
                 for (double x : times) avg_ms += x;
                 avg_ms /= std::max(1, (int)times.size());
@@ -778,6 +790,15 @@ int main(int argc, char** argv)
                     {"build_boxes_ms", build_boxes_ms},
                     {"sort_axis_end", sort_axis_ee}
                 };
+                if (timing_ee.total_ms >= 0.0) {
+                    run["steps"]["axis_merge_ms"] = timing_ee.axis_merge_ms;
+                    run["steps"]["pairs_ms"] = timing_ee.pairs_ms;
+                    run["steps"]["pairs_src"] = timing_ee.pairs_src;
+                    run["steps"]["filter_ms"] = timing_ee.filter_ms;
+                    run["steps"]["filter_src"] = timing_ee.filter_src;
+                    run["steps"]["compose_ms"] = timing_ee.compose_ms;
+                    run["steps"]["total_ms_m2"] = timing_ee.total_ms;
+                }
                 run["threads"] = num_threads;
                 auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
                 run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
