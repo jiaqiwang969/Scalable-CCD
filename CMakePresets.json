@@ -1,0 +1,83 @@
+{
+  "version": 6,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 18,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "displayName": "Base",
+      "generator": "Unix Makefiles",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "SCALABLE_CCD_BUILD_TESTS": "ON"
+      }
+    },
+    {
+      "name": "cpu-double-release",
+      "inherits": "base",
+      "cacheVariables": {
+        "SCALABLE_CCD_WITH_CUDA": "OFF",
+        "SCALABLE_CCD_USE_DOUBLE": "ON",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "cpu-float-release",
+      "inherits": "base",
+      "cacheVariables": {
+        "SCALABLE_CCD_WITH_CUDA": "OFF",
+        "SCALABLE_CCD_USE_DOUBLE": "OFF",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "cuda-double-release",
+      "inherits": "base",
+      "cacheVariables": {
+        "SCALABLE_CCD_WITH_CUDA": "ON",
+        "SCALABLE_CCD_USE_DOUBLE": "ON",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "cuda-float-release",
+      "inherits": "base",
+      "cacheVariables": {
+        "SCALABLE_CCD_WITH_CUDA": "ON",
+        "SCALABLE_CCD_USE_DOUBLE": "OFF",
+        "CMAKE_BUILD_TYPE": "Release"
+      }
+    },
+    {
+      "name": "cpu-double-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "SCALABLE_CCD_WITH_CUDA": "OFF",
+        "SCALABLE_CCD_USE_DOUBLE": "ON",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    },
+    {
+      "name": "cuda-double-debug",
+      "inherits": "base",
+      "cacheVariables": {
+        "SCALABLE_CCD_WITH_CUDA": "ON",
+        "SCALABLE_CCD_USE_DOUBLE": "ON",
+        "CMAKE_BUILD_TYPE": "Debug"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "cpu-double-release", "configurePreset": "cpu-double-release" },
+    { "name": "cpu-float-release", "configurePreset": "cpu-float-release" },
+    { "name": "cuda-double-release", "configurePreset": "cuda-double-release" },
+    { "name": "cuda-float-release", "configurePreset": "cuda-float-release" },
+    { "name": "cpu-double-debug", "configurePreset": "cpu-double-debug" },
+    { "name": "cuda-double-debug", "configurePreset": "cuda-double-debug" }
+  ]
+}
+

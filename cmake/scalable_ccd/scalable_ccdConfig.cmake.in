@@ -1,0 +1,5 @@
+@PACKAGE_INIT@
+
+# This package exports the target 'scalable_ccd::scalable_ccd'
+include("${CMAKE_CURRENT_LIST_DIR}/scalable_ccdTargets.cmake")
+

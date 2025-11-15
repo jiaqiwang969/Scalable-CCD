@@ -107,10 +107,13 @@ configure_file(
   "${SCALABLE_CCD_SOURCE_DIR}/config.hpp")
 
 # Add source and header files to scalable_ccd
-add_subdirectory("${SCALABLE_CCD_SOURCE_DIR}")
+  add_subdirectory("${SCALABLE_CCD_SOURCE_DIR}")
 
 # Public include directory for Scalable CCD
-target_include_directories(scalable_ccd PUBLIC "${SCALABLE_CCD_INCLUDE_DIR}")
+target_include_directories(scalable_ccd PUBLIC
+  $<BUILD_INTERFACE:${SCALABLE_CCD_INCLUDE_DIR}>
+  $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
+)
 
 # ==============================================================================
 # Optional Definitions
@@ -213,6 +216,65 @@ if(SCALABLE_CCD_WITH_CUDA)
 endif()
 
 # ==============================================================================
+# Install (library + headers + CMake package)
+# ==============================================================================
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
+# Install the library
+install(
+  TARGETS scalable_ccd
+  EXPORT scalable_ccdTargets
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+# Also export the warnings interface target to satisfy export dependencies
+install(
+  TARGETS scalable_ccd_warnings
+  EXPORT scalable_ccdTargets
+)
+
+# Install public headers (generated config.hpp and other headers)
+install(
+  DIRECTORY "${SCALABLE_CCD_INCLUDE_DIR}/scalable_ccd"
+  DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  FILES_MATCHING
+    PATTERN "*.hpp"
+    PATTERN "*.h"
+    PATTERN "*.in" EXCLUDE
+)
+
+# Export targets for find_package
+install(
+  EXPORT scalable_ccdTargets
+  NAMESPACE scalable_ccd::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/scalable_ccd
+)
+
+# Generate and install package config files
+configure_package_config_file(
+  "${CMAKE_CURRENT_SOURCE_DIR}/cmake/scalable_ccd/scalable_ccdConfig.cmake.in"
+  "${CMAKE_CURRENT_BINARY_DIR}/scalable_ccdConfig.cmake"
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/scalable_ccd
+)
+
+write_basic_package_version_file(
+  "${CMAKE_CURRENT_BINARY_DIR}/scalable_ccdConfigVersion.cmake"
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY SameMajorVersion
+)
+
+install(
+  FILES
+    "${CMAKE_CURRENT_BINARY_DIR}/scalable_ccdConfig.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/scalable_ccdConfigVersion.cmake"
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/scalable_ccd
+)
+
+# ==============================================================================
 # Tests
 # ==============================================================================
 
@@ -221,4 +283,9 @@ if(SCALABLE_CCD_TOPLEVEL_PROJECT AND SCALABLE_CCD_BUILD_TESTS)
   include(CTest)
   enable_testing()
   add_subdirectory(tests)
+endif()
+
+# Verifier tool (always available at toplevel)
+if(SCALABLE_CCD_TOPLEVEL_PROJECT)
+  add_subdirectory(verifier)
 endif()

@@ -159,6 +159,11 @@ db.sqlite3-journal
 instance/
 .webassets-cache
 
+# Large local datasets (do not commit)
+tests/data-full/
+tests/data-full/_src/
+tests/data-full/_loose/
+
 # Scrapy stuff:
 .scrapy
 

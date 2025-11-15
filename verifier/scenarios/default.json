@@ -1,0 +1,10 @@
+{
+  "scenes": [
+    { "scene": "armadillo-rollers", "t0": "326.ply", "t1": "327.ply", "vf_json": "326vf.json", "ee_json": "326ee.json" },
+    { "scene": "cloth-ball", "t0": "frames/cloth_ball92.ply", "t1": "frames/cloth_ball93.ply", "vf_json": "boxes/92vf.json", "ee_json": "boxes/92ee.json" },
+    { "scene": "cloth-funnel", "t0": "227.ply", "t1": "228.ply", "vf_json": "227vf.json", "ee_json": "227ee.json" },
+    { "scene": "n-body-simulation", "t0": "frames/balls16_18.ply", "t1": "frames/balls16_19.ply", "vf_json": "boxes/18vf.json", "ee_json": "boxes/18ee.json" },
+    { "scene": "rod-twist", "t0": "3036.ply", "t1": "3037.ply", "vf_json": "3036vf.json", "ee_json": "3036ee.json" }
+  ]
+}
+
