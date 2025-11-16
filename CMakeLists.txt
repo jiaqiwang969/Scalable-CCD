@@ -65,10 +65,10 @@ project(ScalableCCD
   LANGUAGES CXX
   VERSION "0.1.0")
 
-option(SCALABLE_CCD_WITH_CUDA "Enable CUDA CCD" OFF)
-option(SCALABLE_CCD_WITH_METAL "Enable Metal backend (Apple platforms)" OFF)
-option(SCALABLE_CCD_WITH_METAL2 "Enable Metal v2 backend (rebuild from scratch)" OFF)
-option(SCALABLE_CCD_WITH_METALCPP "Enable Metal backend via metal-cpp (Apple official C++ API)" ${SCALABLE_CCD_TOPLEVEL_PROJECT})
+	option(SCALABLE_CCD_WITH_CUDA "Enable CUDA CCD" OFF)
+	option(SCALABLE_CCD_WITH_METAL "Enable Metal backend (Apple platforms)" OFF)
+	option(SCALABLE_CCD_WITH_METAL2 "Enable Metal v2 backend (rebuild from scratch)" OFF)
+	option(SCALABLE_CCD_WITH_METALCPP "Enable Metal backend via metal-cpp (Apple official C++ API)" ${SCALABLE_CCD_TOPLEVEL_PROJECT})
 option(SCALABLE_CCD_USE_DOUBLE "Use double precision calculation" ON)
 option(SCALABLE_CCD_TOI_PER_QUERY "Output time of impact per query in JSON" OFF)
 option(SCALABLE_CCD_BUILD_TESTS "Build Scalable CCD tests" ${SCALABLE_CCD_TOPLEVEL_PROJECT})
@@ -131,6 +131,8 @@ target_include_directories(scalable_ccd PUBLIC
   $<BUILD_INTERFACE:${SCALABLE_CCD_INCLUDE_DIR}>
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
+
+#
 
 # ==============================================================================
 # Optional Definitions

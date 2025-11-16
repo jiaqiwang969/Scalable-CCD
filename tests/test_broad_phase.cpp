@@ -9,6 +9,7 @@
 
 #include <vector>
 #include <filesystem>
+#include <iostream>
 namespace fs = std::filesystem;
 
 TEST_CASE("Test CPU broad phase", "[cpu][broad_phase]")
@@ -40,21 +41,33 @@ TEST_CASE("Test CPU broad phase", "[cpu][broad_phase]")
     // ------------------------------------------------------------------------
     // Run
 
-    Timer timer;
-    timer.start();
+    double vf_ms = 0.0, ee_ms = 0.0;
 
     int sort_axis = 0;
     std::vector<std::pair<int, int>> vf_overlaps;
+    {
+        Timer t;
+        t.start();
+        sort_and_sweep(vertex_boxes, face_boxes, sort_axis, vf_overlaps);
+        t.stop();
+        vf_ms = t.getElapsedTimeInMilliSec();
+    }
     sort_and_sweep(vertex_boxes, face_boxes, sort_axis, vf_overlaps);
     CHECK(sort_axis == 0); // check output sort axis
 
     sort_axis = 0; // Reset sort axis
     std::vector<std::pair<int, int>> ee_overlaps;
-    sort_and_sweep(edge_boxes, sort_axis, ee_overlaps);
+    {
+        Timer t;
+        t.start();
+        sort_and_sweep(edge_boxes, sort_axis, ee_overlaps);
+        t.stop();
+        ee_ms = t.getElapsedTimeInMilliSec();
+    }
     CHECK(sort_axis == 0); // check output sort axis
 
-    timer.stop();
-    logger().trace("Elapsed time: {:.6f} ms", timer.getElapsedTimeInMilliSec());
+    // 输出便于对比 CUDA/Metal
+    std::cout << "[CPU-SAP] VF_MS=" << vf_ms << " EE_MS=" << ee_ms << std::endl;
 
     // ------------------------------------------------------------------------
     // Compare

@@ -5,6 +5,7 @@
 add_executable(scalable_ccd_tests
   main.cpp
   test_broad_phase.cpp
+  test_broad_phase_expected.cpp
 
   # Utils
   ground_truth.cpp
@@ -12,6 +13,13 @@ add_executable(scalable_ccd_tests
   io.cpp
   io.hpp
 )
+
+if(APPLE AND SCALABLE_CCD_WITH_METAL)
+  target_sources(scalable_ccd_tests PRIVATE
+    test_broad_phase_metal.cpp
+  )
+  target_compile_definitions(scalable_ccd_tests PRIVATE SCALABLE_CCD_WITH_METAL)
+endif()
 
 if(SCALABLE_CCD_WITH_CUDA)
   target_sources(scalable_ccd_tests PRIVATE
@@ -66,4 +74,6 @@ include(Catch)
 
 # Register tests
 set(PARSE_CATCH_TESTS_ADD_TO_CONFIGURE_DEPENDS ON)
-catch_discover_tests(scalable_ccd_tests)
+catch_discover_tests(scalable_ccd_tests
+  EXTRA_ARGS -s --durations yes
+)

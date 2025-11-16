@@ -1,46 +1,56 @@
-set(SOURCES
-  broad_phase/broad_phase.hpp
-  broad_phase/broad_phase.cpp
-  broad_phase/aabb.hpp
-  broad_phase/utils.hpp
-  broad_phase/utils.cpp
-  broad_phase/sweep.hpp
-  broad_phase/sweep.cpp
-  # Narrow-phase 代码已迁移为 legacy，暂不参与当前构建，避免影响验证流程
-  # narrow_phase_legacy/*
-  runtime/runtime.hpp
-  runtime/runtime.mm
+cmake_minimum_required(VERSION 3.18)
+
+# Build Metal kernels and host wrapper, link frameworks, and expose to main target.
+
+if(NOT APPLE)
+  message(WARNING "Metal backend requested but not on Apple platform; skipping.")
+  return()
+endif()
+
+set(METAL_SRC ${CMAKE_CURRENT_SOURCE_DIR}/kernels/broad_phase_sap.metal)
+set(METAL_AIR ${CMAKE_CURRENT_BINARY_DIR}/broad_phase_sap.air)
+set(METAL_LIB ${CMAKE_CURRENT_BINARY_DIR}/scalable_ccd_kernels.metallib)
+
+add_custom_command(
+  OUTPUT ${METAL_AIR}
+  COMMAND xcrun -sdk macosx metal -c ${METAL_SRC} -o ${METAL_AIR}
+  DEPENDS ${METAL_SRC}
+  VERBATIM
+  COMMENT "Compiling Metal kernel to AIR: ${METAL_SRC}"
 )
 
-source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" PREFIX "Source Files" FILES ${SOURCES})
-target_sources(scalable_ccd PRIVATE ${SOURCES})
+add_custom_command(
+  OUTPUT ${METAL_LIB}
+  COMMAND xcrun -sdk macosx metallib ${METAL_AIR} -o ${METAL_LIB}
+  DEPENDS ${METAL_AIR}
+  VERBATIM
+  COMMENT "Linking Metal AIR to metallib: ${METAL_LIB}"
+)
 
-if(APPLE)
-  # 链接 Apple Metal 框架
-  find_library(METAL_FRAMEWORK Metal)
-  find_library(FOUNDATION_FRAMEWORK Foundation)
-  find_library(METALKIT_FRAMEWORK MetalKit)
-  # MPS 可选
-  find_library(MPS_FRAMEWORK MetalPerformanceShaders)
-  if(METAL_FRAMEWORK)
-    target_link_libraries(scalable_ccd PRIVATE ${METAL_FRAMEWORK})
-  endif()
-  if(FOUNDATION_FRAMEWORK)
-    target_link_libraries(scalable_ccd PRIVATE ${FOUNDATION_FRAMEWORK})
-  endif()
-  if(METALKIT_FRAMEWORK)
-    target_link_libraries(scalable_ccd PRIVATE ${METALKIT_FRAMEWORK})
-  endif()
-  if(MPS_FRAMEWORK)
-    target_link_libraries(scalable_ccd PRIVATE ${MPS_FRAMEWORK})
-  endif()
-  # 将 .mm 作为 ObjC++
-  set_source_files_properties(
-    narrow_phase/root_finder.mm
-    narrow_phase/narrow_phase.mm
-    runtime/runtime.mm
-    PROPERTIES
-    LANGUAGE CXX
-    COMPILE_FLAGS "-fobjc-arc -ObjC++"
-  )
-endif()
+add_custom_target(scalable_ccd_metallib ALL DEPENDS ${METAL_LIB})
+
+# Host wrapper
+set(METAL_HOST_SOURCES
+  ${CMAKE_CURRENT_SOURCE_DIR}/broad_phase_metal.cpp
+)
+
+target_sources(scalable_ccd PRIVATE ${METAL_HOST_SOURCES})
+
+target_include_directories(scalable_ccd PRIVATE
+  ${CMAKE_CURRENT_SOURCE_DIR}
+  ${PROJECT_SOURCE_DIR}/src/scalable_ccd/metal-cpp
+)
+
+target_compile_definitions(scalable_ccd PRIVATE
+  SCALABLE_CCD_METAL_LIB_PATH="${METAL_LIB}"
+)
+
+find_library(FOUNDATION_FRAMEWORK Foundation)
+find_library(METAL_FRAMEWORK Metal)
+find_library(QUARTZCORE_FRAMEWORK QuartzCore)
+
+target_link_libraries(scalable_ccd PRIVATE
+  ${FOUNDATION_FRAMEWORK}
+  ${METAL_FRAMEWORK}
+  ${QUARTZCORE_FRAMEWORK}
+)
