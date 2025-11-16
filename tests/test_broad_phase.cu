@@ -13,10 +13,13 @@
 #include <scalable_ccd/utils/pca.hpp>
 #include <scalable_ccd/utils/logger.hpp>
 #include <scalable_ccd/utils/profiler.hpp>
+#include <scalable_ccd/utils/timer.hpp>
+#include <scalable_ccd/cuda/utils/timer.cuh>
 
 #include <igl/write_triangle_mesh.h>
 
 #include <filesystem>
+#include <iostream>
 namespace fs = std::filesystem;
 
 TEST_CASE("Test CUDA broad phase", "[gpu][cuda][broad_phase]")
@@ -93,15 +96,45 @@ TEST_CASE("Test CUDA broad phase", "[gpu][cuda][broad_phase]")
 
     BroadPhase broad_phase;
 
+    // VF：Host 与 GPU 计时
+    double vf_host_ms = 0.0, vf_gpu_ms = 0.0;
     broad_phase.build(
         std::make_shared<DeviceAABBs>(vertex_boxes),
         std::make_shared<DeviceAABBs>(face_boxes));
-    std::vector<std::pair<int, int>> vf_overlaps =
-        broad_phase.detect_overlaps();
+    std::vector<std::pair<int, int>> vf_overlaps;
+    {
+        scalable_ccd::Timer host_t;
+        scalable_ccd::cuda::Timer gpu_t;
+        host_t.start();
+        gpu_t.start();
+        vf_overlaps = broad_phase.detect_overlaps();
+        gpu_t.stop();
+        host_t.stop();
+        vf_host_ms = host_t.getElapsedTimeInMilliSec();
+        vf_gpu_ms = gpu_t.getElapsedTimeInMilliSec();
+    }
 
+    // EE：Host 与 GPU 计时
+    double ee_host_ms = 0.0, ee_gpu_ms = 0.0;
     broad_phase.build(std::make_shared<DeviceAABBs>(edge_boxes));
-    std::vector<std::pair<int, int>> ee_overlaps =
-        broad_phase.detect_overlaps();
+    std::vector<std::pair<int, int>> ee_overlaps;
+    {
+        scalable_ccd::Timer host_t;
+        scalable_ccd::cuda::Timer gpu_t;
+        host_t.start();
+        gpu_t.start();
+        ee_overlaps = broad_phase.detect_overlaps();
+        gpu_t.stop();
+        host_t.stop();
+        ee_host_ms = host_t.getElapsedTimeInMilliSec();
+        ee_gpu_ms = gpu_t.getElapsedTimeInMilliSec();
+    }
+
+    // 输出一致性格式，便于与 CPU/Metal 对比
+    std::cout << "[CUDA-SAP] VF_MS=" << vf_host_ms << " EE_MS=" << ee_host_ms
+              << std::endl;
+    std::cout << "[CUDA-GPU-MS] VF_MS=" << vf_gpu_ms << " EE_MS=" << ee_gpu_ms
+              << std::endl;
 
     // const size_t expected_overlap_size = pca ? 6'954'911 : 6'852'873;
     // CHECK(vf_overlaps.size() + ee_overlaps.size() == expected_overlap_size);
