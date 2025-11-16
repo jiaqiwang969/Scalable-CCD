@@ -24,6 +24,7 @@ endif()
 if(SCALABLE_CCD_WITH_CUDA)
   target_sources(scalable_ccd_tests PRIVATE
     test_broad_phase.cu
+    test_broad_phase_cuda_expected.cu
     test_narrow_phase.cu
   )
 endif()
@@ -63,6 +64,7 @@ target_link_libraries(scalable_ccd_tests PRIVATE scalable_ccd::warnings)
 # ==============================================================================
 
 target_compile_definitions(scalable_ccd_tests PRIVATE CATCH_CONFIG_ENABLE_BENCHMARKING)
+target_compile_definitions(scalable_ccd_tests PRIVATE SCALABLE_CCD_TESTS_SOURCE_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}\")
 
 # ==============================================================================
 # Register tests
