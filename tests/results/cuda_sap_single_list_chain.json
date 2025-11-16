@@ -1,0 +1,11 @@
+{
+  "backend": "cuda",
+  "case_name": "单列表：链式重叠",
+  "category": "broad_phase_sap",
+  "cpu_ms": 11.320276,
+  "gpu_ms": 11.316384315490723,
+  "overlaps_count": 3,
+  "passed": true,
+  "slug": "single_list_chain",
+  "timestamp": 1763265140
+}

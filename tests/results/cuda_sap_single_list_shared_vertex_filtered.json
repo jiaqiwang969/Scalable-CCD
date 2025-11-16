@@ -1,0 +1,11 @@
+{
+  "backend": "cuda",
+  "case_name": "单列表：共享顶点过滤",
+  "category": "broad_phase_sap",
+  "cpu_ms": 11.439487,
+  "gpu_ms": 11.436384201049805,
+  "overlaps_count": 0,
+  "passed": true,
+  "slug": "single_list_shared_vertex_filtered",
+  "timestamp": 1763265140
+}
