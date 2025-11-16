@@ -66,6 +66,7 @@ project(ScalableCCD
   VERSION "0.1.0")
 
 option(SCALABLE_CCD_WITH_CUDA "Enable CUDA CCD" OFF)
+option(SCALABLE_CCD_WITH_METAL "Enable Metal CCD (macOS)" OFF)
 option(SCALABLE_CCD_USE_DOUBLE "Use double precision calculation" ON)
 option(SCALABLE_CCD_TOI_PER_QUERY "Output time of impact per query in JSON" OFF)
 option(SCALABLE_CCD_BUILD_TESTS "Build Scalable CCD tests" ${SCALABLE_CCD_TOPLEVEL_PROJECT})
@@ -111,6 +112,13 @@ add_subdirectory("${SCALABLE_CCD_SOURCE_DIR}")
 
 # Public include directory for Scalable CCD
 target_include_directories(scalable_ccd PUBLIC "${SCALABLE_CCD_INCLUDE_DIR}")
+
+# ==============================================================================
+# Metal (optional, macOS only)
+# ==============================================================================
+if(APPLE AND SCALABLE_CCD_WITH_METAL)
+  add_subdirectory("${SCALABLE_CCD_SOURCE_DIR}/metal")
+endif()
 
 # ==============================================================================
 # Optional Definitions
