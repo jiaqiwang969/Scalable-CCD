@@ -55,6 +55,9 @@ public:
     void upload(const MetalAABBsSoA& soa);
     size_t num_boxes() const { return nboxes_; }
 
+    // 最近一次 kernel 的 GPU 时间（毫秒）；若不可用则返回负值
+    double last_gpu_ms() const { return last_gpu_ms_; }
+
     // 执行一批 SAP（单/双列表），返回写入范围内的 overlaps。
     // 若设备端 real_count > overlaps_capacity，返回被截断的 overlaps，
     // 调用方可据此扩容或缩批并重跑本批。
@@ -68,8 +71,8 @@ private:
     struct Impl;
     Impl* impl_ = nullptr;
     uint32_t nboxes_ = 0;
+    double last_gpu_ms_ = -1.0;
 };
 
 } // namespace metal
 } // namespace scalable_ccd
-

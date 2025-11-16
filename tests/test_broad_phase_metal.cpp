@@ -7,8 +7,11 @@
 #include <scalable_ccd/metal/broad_phase_metal.hpp>
 
 #include <algorithm>
+#include <iostream>
 #include <utility>
 #include <vector>
+
+#include <scalable_ccd/utils/timer.hpp>
 
 using scalable_ccd::AABB;
 using Pair = std::pair<int, int>;
@@ -64,10 +67,18 @@ TEST_CASE("Metal SAP 对拍：单列表链式重叠", "[broad_phase][metal]")
     scalable_ccd::metal::make_soa_one_list(boxes, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
     bp.upload(soa);
-    auto out = bp.detect_overlaps_partial(
-        /*two_lists=*/false, /*start=*/0,
-        /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
-        /*overlaps_capacity=*/1024);
+    std::vector<Pair> out;
+    {
+        scalable_ccd::Timer t;
+        t.start();
+        out = bp.detect_overlaps_partial(
+            /*two_lists=*/false, /*start=*/0,
+            /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
+            /*overlaps_capacity=*/1024);
+        t.stop();
+        std::cout << "[Metal-SAP] SingleList-Chain MS=" << t.getElapsedTimeInMilliSec() << std::endl;
+        std::cout << "[Metal-GPU-MS] SingleList-Chain MS=" << bp.last_gpu_ms() << std::endl;
+    }
     sort_pairs(out);
     REQUIRE(out == gt);
 }
@@ -87,10 +98,18 @@ TEST_CASE("Metal SAP 对拍：单列表共享顶点过滤", "[broad_phase][metal
     scalable_ccd::metal::make_soa_one_list(boxes, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
     bp.upload(soa);
-    auto out = bp.detect_overlaps_partial(
-        /*two_lists=*/false, /*start=*/0,
-        /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
-        /*overlaps_capacity=*/16);
+    std::vector<Pair> out;
+    {
+        scalable_ccd::Timer t;
+        t.start();
+        out = bp.detect_overlaps_partial(
+            /*two_lists=*/false, /*start=*/0,
+            /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
+            /*overlaps_capacity=*/16);
+        t.stop();
+        std::cout << "[Metal-SAP] SingleList-SharedVertexFiltered MS=" << t.getElapsedTimeInMilliSec() << std::endl;
+        std::cout << "[Metal-GPU-MS] SingleList-SharedVertexFiltered MS=" << bp.last_gpu_ms() << std::endl;
+    }
     sort_pairs(out);
     REQUIRE(out == gt);
 }
@@ -112,10 +131,18 @@ TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
     scalable_ccd::metal::make_soa_two_lists(A, B, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
     bp.upload(soa);
-    auto out = bp.detect_overlaps_partial(
-        /*two_lists=*/true, /*start=*/0,
-        /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
-        /*overlaps_capacity=*/16);
+    std::vector<Pair> out;
+    {
+        scalable_ccd::Timer t;
+        t.start();
+        out = bp.detect_overlaps_partial(
+            /*two_lists=*/true, /*start=*/0,
+            /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
+            /*overlaps_capacity=*/16);
+        t.stop();
+        std::cout << "[Metal-SAP] TwoLists-CrossOnly MS=" << t.getElapsedTimeInMilliSec() << std::endl;
+        std::cout << "[Metal-GPU-MS] TwoLists-CrossOnly MS=" << bp.last_gpu_ms() << std::endl;
+    }
     sort_pairs(out);
     REQUIRE(out == gt);
 }

@@ -8,8 +8,11 @@
 #include <scalable_ccd/broad_phase/sort_and_sweep.hpp>
 
 #include <algorithm>
+#include <iostream>
 #include <utility>
 #include <vector>
+
+#include <scalable_ccd/utils/timer.hpp>
 
 using scalable_ccd::AABB;
 using Pair = std::pair<int, int>;
@@ -60,7 +63,13 @@ TEST_CASE("单列表：链式重叠（不共享顶点）", "[broad_phase][cpu][e
 
     int sort_axis = 0; // x 轴
     std::vector<Pair> overlaps;
-    scalable_ccd::sort_and_sweep(boxes, sort_axis, overlaps);
+    {
+        scalable_ccd::Timer t;
+        t.start();
+        scalable_ccd::sort_and_sweep(boxes, sort_axis, overlaps);
+        t.stop();
+        std::cout << "[Expected-CPU-SAP] SingleList-Chain MS=" << t.getElapsedTimeInMilliSec() << std::endl;
+    }
 
     std::vector<Pair> expected = { { 0, 1 }, { 0, 2 }, { 2, 3 } };
     sort_pairs(overlaps);
@@ -77,7 +86,13 @@ TEST_CASE("单列表：共享顶点过滤", "[broad_phase][cpu][expected]")
 
     int sort_axis = 0;
     std::vector<Pair> overlaps;
-    scalable_ccd::sort_and_sweep(boxes, sort_axis, overlaps);
+    {
+        scalable_ccd::Timer t;
+        t.start();
+        scalable_ccd::sort_and_sweep(boxes, sort_axis, overlaps);
+        t.stop();
+        std::cout << "[Expected-CPU-SAP] SingleList-SharedVertexFiltered MS=" << t.getElapsedTimeInMilliSec() << std::endl;
+    }
 
     std::vector<Pair> expected; // 空
     sort_pairs(overlaps);
@@ -97,7 +112,13 @@ TEST_CASE("双列表：仅跨列表配对", "[broad_phase][cpu][expected]")
 
     int sort_axis = 0;
     std::vector<Pair> overlaps;
-    scalable_ccd::sort_and_sweep(A, B, sort_axis, overlaps);
+    {
+        scalable_ccd::Timer t;
+        t.start();
+        scalable_ccd::sort_and_sweep(A, B, sort_axis, overlaps);
+        t.stop();
+        std::cout << "[Expected-CPU-SAP] TwoLists-CrossOnly MS=" << t.getElapsedTimeInMilliSec() << std::endl;
+    }
 
     std::vector<Pair> expected = { { 0, 0 }, { 1, 1 } };
     sort_pairs(overlaps);
