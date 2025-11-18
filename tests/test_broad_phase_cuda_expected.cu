@@ -42,6 +42,7 @@ static void write_json_result(
     const std::string& case_name,
     const double cpu_ms,
     const double gpu_ms,
+    const double cpu_total_ms,
     const size_t overlaps_count,
     const bool passed)
 {
@@ -62,6 +63,7 @@ static void write_json_result(
         j["case_name"] = case_name;
         j["slug"] = slug;
         j["cpu_ms"] = cpu_ms;
+        j["cpu_total_ms"] = cpu_total_ms;
         j["gpu_ms"] = gpu_ms;
         j["overlaps_count"] = overlaps_count;
         j["passed"] = passed;
@@ -145,10 +147,14 @@ TEST_CASE("CUDA SAP 对拍：单列表链式重叠", "[broad_phase][cuda]")
     sort_pairs(gt);
 
     // CUDA
+    scalable_ccd::Timer t_total;
+    t_total.start();
     auto d_boxes = make_device_aabbs(boxes);
     scalable_ccd::cuda::BroadPhase bp;
     bp.build(d_boxes);
     std::vector<Pair> out;
+    double cpu_kernel_ms = 0.0;
+    double gpu_ms = 0.0;
     {
         scalable_ccd::Timer t_cpu;
         t_cpu.start();
@@ -157,20 +163,22 @@ TEST_CASE("CUDA SAP 对拍：单列表链式重叠", "[broad_phase][cuda]")
         out = bp.detect_overlaps();
         t_gpu.stop();
         t_cpu.stop();
-        std::cout << "[CUDA-SAP] SingleList-Chain MS=" << t_cpu.getElapsedTimeInMilliSec() << std::endl;
-        std::cout << "[CUDA-GPU-MS] SingleList-Chain MS=" << t_gpu.getElapsedTimeInMilliSec() << std::endl;
-
-        // JSON 输出
-        auto cpu_ms = t_cpu.getElapsedTimeInMilliSec();
-        auto gpu_ms = t_gpu.getElapsedTimeInMilliSec();
-        write_json_result(
-            "single_list_chain",
-            "单列表：链式重叠",
-            cpu_ms,
-            gpu_ms,
-            out.size(),
-            /*passed=*/true);
+        cpu_kernel_ms = t_cpu.getElapsedTimeInMilliSec();
+        gpu_ms = t_gpu.getElapsedTimeInMilliSec();
+        std::cout << "[CUDA-SAP] SingleList-Chain MS=" << cpu_kernel_ms << std::endl;
+        std::cout << "[CUDA-GPU-MS] SingleList-Chain MS=" << gpu_ms << std::endl;
     }
+    t_total.stop();
+    const double cpu_total_ms = t_total.getElapsedTimeInMilliSec();
+    std::cout << "[CUDA-SAP-E2E] SingleList-Chain MS=" << cpu_total_ms << std::endl;
+    write_json_result(
+        "single_list_chain",
+        "单列表：链式重叠",
+        cpu_kernel_ms,
+        gpu_ms,
+        cpu_total_ms,
+        out.size(),
+        /*passed=*/true);
     sort_pairs(out);
     REQUIRE(out == gt);
 }
@@ -186,10 +194,14 @@ TEST_CASE("CUDA SAP 对拍：单列表共享顶点过滤", "[broad_phase][cuda]"
     scalable_ccd::sort_and_sweep(boxes, sort_axis, gt);
     sort_pairs(gt);
 
+    scalable_ccd::Timer t_total;
+    t_total.start();
     auto d_boxes = make_device_aabbs(boxes);
     scalable_ccd::cuda::BroadPhase bp;
     bp.build(d_boxes);
     std::vector<Pair> out;
+    double cpu_kernel_ms = 0.0;
+    double gpu_ms = 0.0;
     {
         scalable_ccd::Timer t_cpu;
         t_cpu.start();
@@ -198,20 +210,22 @@ TEST_CASE("CUDA SAP 对拍：单列表共享顶点过滤", "[broad_phase][cuda]"
         out = bp.detect_overlaps();
         t_gpu.stop();
         t_cpu.stop();
-        std::cout << "[CUDA-SAP] SingleList-SharedVertexFiltered MS=" << t_cpu.getElapsedTimeInMilliSec() << std::endl;
-        std::cout << "[CUDA-GPU-MS] SingleList-SharedVertexFiltered MS=" << t_gpu.getElapsedTimeInMilliSec() << std::endl;
-
-        // JSON 输出
-        auto cpu_ms = t_cpu.getElapsedTimeInMilliSec();
-        auto gpu_ms = t_gpu.getElapsedTimeInMilliSec();
-        write_json_result(
-            "single_list_shared_vertex_filtered",
-            "单列表：共享顶点过滤",
-            cpu_ms,
-            gpu_ms,
-            out.size(),
-            /*passed=*/true);
+        cpu_kernel_ms = t_cpu.getElapsedTimeInMilliSec();
+        gpu_ms = t_gpu.getElapsedTimeInMilliSec();
+        std::cout << "[CUDA-SAP] SingleList-SharedVertexFiltered MS=" << cpu_kernel_ms << std::endl;
+        std::cout << "[CUDA-GPU-MS] SingleList-SharedVertexFiltered MS=" << gpu_ms << std::endl;
     }
+    t_total.stop();
+    const double cpu_total_ms = t_total.getElapsedTimeInMilliSec();
+    std::cout << "[CUDA-SAP-E2E] SingleList-SharedVertexFiltered MS=" << cpu_total_ms << std::endl;
+    write_json_result(
+        "single_list_shared_vertex_filtered",
+        "单列表：共享顶点过滤",
+        cpu_kernel_ms,
+        gpu_ms,
+        cpu_total_ms,
+        out.size(),
+        /*passed=*/true);
     sort_pairs(out);
     REQUIRE(out == gt);
 }
@@ -229,11 +243,15 @@ TEST_CASE("CUDA SAP 对拍：双列表仅跨列表", "[broad_phase][cuda]")
     scalable_ccd::sort_and_sweep(A, B, sort_axis, gt);
     sort_pairs(gt);
 
+    scalable_ccd::Timer t_total;
+    t_total.start();
     auto d_A = make_device_aabbs(A);
     auto d_B = make_device_aabbs(B);
     scalable_ccd::cuda::BroadPhase bp;
     bp.build(d_A, d_B);
     std::vector<Pair> out;
+    double cpu_kernel_ms = 0.0;
+    double gpu_ms = 0.0;
     {
         scalable_ccd::Timer t_cpu;
         t_cpu.start();
@@ -242,20 +260,22 @@ TEST_CASE("CUDA SAP 对拍：双列表仅跨列表", "[broad_phase][cuda]")
         out = bp.detect_overlaps();
         t_gpu.stop();
         t_cpu.stop();
-        std::cout << "[CUDA-SAP] TwoLists-CrossOnly MS=" << t_cpu.getElapsedTimeInMilliSec() << std::endl;
-        std::cout << "[CUDA-GPU-MS] TwoLists-CrossOnly MS=" << t_gpu.getElapsedTimeInMilliSec() << std::endl;
-
-        // JSON 输出
-        auto cpu_ms = t_cpu.getElapsedTimeInMilliSec();
-        auto gpu_ms = t_gpu.getElapsedTimeInMilliSec();
-        write_json_result(
-            "two_lists_cross_only",
-            "双列表：仅跨列表配对",
-            cpu_ms,
-            gpu_ms,
-            out.size(),
-            /*passed=*/true);
+        cpu_kernel_ms = t_cpu.getElapsedTimeInMilliSec();
+        gpu_ms = t_gpu.getElapsedTimeInMilliSec();
+        std::cout << "[CUDA-SAP] TwoLists-CrossOnly MS=" << cpu_kernel_ms << std::endl;
+        std::cout << "[CUDA-GPU-MS] TwoLists-CrossOnly MS=" << gpu_ms << std::endl;
     }
+    t_total.stop();
+    const double cpu_total_ms = t_total.getElapsedTimeInMilliSec();
+    std::cout << "[CUDA-SAP-E2E] TwoLists-CrossOnly MS=" << cpu_total_ms << std::endl;
+    write_json_result(
+        "two_lists_cross_only",
+        "双列表：仅跨列表配对",
+        cpu_kernel_ms,
+        gpu_ms,
+        cpu_total_ms,
+        out.size(),
+        /*passed=*/true);
     sort_pairs(out);
     REQUIRE(out == gt);
 }
