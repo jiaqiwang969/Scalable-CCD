@@ -57,6 +57,8 @@ public:
 
     // 最近一次 kernel 的 GPU 时间（毫秒）；若不可用则返回负值
     double last_gpu_ms() const { return last_gpu_ms_; }
+    // 最近一次 kernel 的真实计数（未截断）
+    size_t last_real_count() const { return last_real_count_; }
 
     // 执行一批 SAP（单/双列表），返回写入范围内的 overlaps。
     // 若设备端 real_count > overlaps_capacity，返回被截断的 overlaps，
@@ -72,6 +74,7 @@ private:
     Impl* impl_ = nullptr;
     uint32_t nboxes_ = 0;
     double last_gpu_ms_ = -1.0;
+    size_t last_real_count_ = 0;
 };
 
 } // namespace metal

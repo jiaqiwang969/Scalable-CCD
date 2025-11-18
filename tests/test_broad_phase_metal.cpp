@@ -2,6 +2,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "ground_truth.hpp"
+#include "io.hpp"
+
 #include <scalable_ccd/broad_phase/aabb.hpp>
 #include <scalable_ccd/broad_phase/sort_and_sweep.hpp>
 #include <scalable_ccd/metal/broad_phase_metal.hpp>
@@ -63,6 +66,14 @@ static void write_json_result(
     }
 }
 
+static size_t read_ground_truth_size(const fs::path& path)
+{
+    std::ifstream in(path);
+    REQUIRE(in.good());
+    const nlohmann::json j = nlohmann::json::parse(in);
+    return j.size();
+}
+
 static void sort_pairs(std::vector<Pair>& v)
 {
     for (auto& p : v) {
@@ -91,6 +102,47 @@ static AABB make_box(
     box.element_id = eid;
     box.vertex_ids = { { v0, v1, v2 } };
     return box;
+}
+
+static int auto_select_axis(
+    const std::vector<AABB>& boxesA,
+    const std::vector<AABB>* boxesB = nullptr)
+{
+    double sum[3] = { 0.0, 0.0, 0.0 };
+    double sumsq[3] = { 0.0, 0.0, 0.0 };
+    size_t total = 0;
+
+    auto accumulate = [&](const std::vector<AABB>& boxes) {
+        for (const auto& box : boxes) {
+            const auto center = (box.min + box.max) / 2.0;
+            for (int i = 0; i < 3; ++i) {
+                const double c = center[i];
+                sum[i] += c;
+                sumsq[i] += c * c;
+            }
+            ++total;
+        }
+    };
+
+    accumulate(boxesA);
+    if (boxesB) {
+        accumulate(*boxesB);
+    }
+
+    int axis = 0;
+    double best_var = -1.0;
+    if (total == 0) {
+        return 0;
+    }
+    for (int i = 0; i < 3; ++i) {
+        const double mean = sum[i] / total;
+        const double var = sumsq[i] / total - mean * mean;
+        if (var > best_var) {
+            best_var = var;
+            axis = i;
+        }
+    }
+    return axis;
 }
 
 #if defined(SCALABLE_CCD_WITH_METAL) && defined(__APPLE__)
@@ -243,6 +295,155 @@ TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
         /*passed=*/true);
     sort_pairs(out);
     REQUIRE(out == gt);
+}
+
+TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ball]")
+{
+    const fs::path data(SCALABLE_CCD_DATA_DIR);
+    const fs::path file_t0 =
+        data / "cloth-ball" / "frames" / "cloth_ball92.ply";
+    const fs::path file_t1 =
+        data / "cloth-ball" / "frames" / "cloth_ball93.ply";
+    const fs::path vf_gt = data / "cloth-ball" / "boxes" / "92vf.json";
+    const fs::path ee_gt = data / "cloth-ball" / "boxes" / "92ee.json";
+
+    Eigen::MatrixXd vertices_t0, vertices_t1;
+    Eigen::MatrixXi edges, faces;
+    scalable_ccd::parse_mesh(
+        file_t0, file_t1, vertices_t0, vertices_t1, faces, edges);
+
+    std::vector<AABB> vertex_boxes, edge_boxes, face_boxes;
+    scalable_ccd::build_vertex_boxes(vertices_t0, vertices_t1, vertex_boxes);
+    scalable_ccd::build_edge_boxes(vertex_boxes, edges, edge_boxes);
+    scalable_ccd::build_face_boxes(vertex_boxes, faces, face_boxes);
+
+    const size_t vf_expected = read_ground_truth_size(vf_gt);
+    const size_t ee_expected = read_ground_truth_size(ee_gt);
+
+    std::vector<Pair> vf_overlaps, ee_overlaps;
+
+    // 顶点-面
+    double vf_cpu_kernel_ms = 0.0;
+    double vf_gpu_ms = 0.0;
+    double vf_cpu_total_ms = 0.0;
+    {
+        scalable_ccd::Timer t_total;
+        t_total.start();
+        scalable_ccd::metal::MetalAABBsSoA soa;
+        const int vf_axis = auto_select_axis(vertex_boxes, &face_boxes);
+        scalable_ccd::metal::make_soa_two_lists(
+            vertex_boxes, face_boxes, vf_axis, soa);
+        scalable_ccd::metal::BroadPhase bp;
+        bp.upload(soa);
+
+        scalable_ccd::Timer t_kernel;
+        uint32_t capacity = static_cast<uint32_t>(
+            std::max<size_t>(vf_expected + vf_expected / 10 + 4096, 4096));
+        while (true) {
+            t_kernel.start();
+            vf_overlaps = bp.detect_overlaps_partial(
+                /*two_lists=*/true,
+                /*start=*/0,
+                static_cast<uint32_t>(soa.size()),
+                capacity);
+            t_kernel.stop();
+            vf_cpu_kernel_ms = t_kernel.getElapsedTimeInMilliSec();
+            vf_gpu_ms = bp.last_gpu_ms();
+            if (bp.last_real_count() > capacity) {
+                capacity = static_cast<uint32_t>(bp.last_real_count() * 1.2 + 4096);
+                vf_overlaps.clear();
+                t_kernel = scalable_ccd::Timer();
+                continue;
+            }
+            break;
+        }
+        t_total.stop();
+        vf_cpu_total_ms = t_total.getElapsedTimeInMilliSec();
+
+        std::cout << "[Metal-SAP] ClothBall-VF Host=" << vf_cpu_kernel_ms
+                  << " ms" << std::endl;
+        std::cout << "[Metal-GPU-MS] ClothBall-VF=" << vf_gpu_ms << " ms"
+                  << std::endl;
+        std::cout << "[Metal-SAP-E2E] ClothBall-VF=" << vf_cpu_total_ms
+                  << " ms" << std::endl;
+
+        write_json_result(
+            "cloth_ball_vf",
+            "Cloth-Ball：顶点-面",
+            vf_cpu_kernel_ms,
+            vf_gpu_ms,
+            vf_cpu_total_ms,
+            vf_overlaps.size(),
+            /*passed=*/true);
+    }
+
+    // 边-边
+    double ee_cpu_kernel_ms = 0.0;
+    double ee_gpu_ms = 0.0;
+    double ee_cpu_total_ms = 0.0;
+    {
+        scalable_ccd::Timer t_total;
+        t_total.start();
+        scalable_ccd::metal::MetalAABBsSoA soa;
+        const int ee_axis = auto_select_axis(edge_boxes, nullptr);
+        scalable_ccd::metal::make_soa_one_list(edge_boxes, ee_axis, soa);
+        scalable_ccd::metal::BroadPhase bp;
+        bp.upload(soa);
+
+        scalable_ccd::Timer t_kernel;
+        uint32_t capacity = static_cast<uint32_t>(
+            std::max<size_t>(ee_expected + ee_expected / 10 + 4096, 4096));
+        while (true) {
+            t_kernel.start();
+            ee_overlaps = bp.detect_overlaps_partial(
+                /*two_lists=*/false,
+                /*start=*/0,
+                static_cast<uint32_t>(soa.size()),
+                capacity);
+            t_kernel.stop();
+            ee_cpu_kernel_ms = t_kernel.getElapsedTimeInMilliSec();
+            ee_gpu_ms = bp.last_gpu_ms();
+            if (bp.last_real_count() > capacity) {
+                capacity = static_cast<uint32_t>(bp.last_real_count() * 1.2 + 4096);
+                ee_overlaps.clear();
+                t_kernel = scalable_ccd::Timer();
+                continue;
+            }
+            break;
+        }
+        t_total.stop();
+        ee_cpu_total_ms = t_total.getElapsedTimeInMilliSec();
+
+        std::cout << "[Metal-SAP] ClothBall-EE Host=" << ee_cpu_kernel_ms
+                  << " ms" << std::endl;
+        std::cout << "[Metal-GPU-MS] ClothBall-EE=" << ee_gpu_ms << " ms"
+                  << std::endl;
+        std::cout << "[Metal-SAP-E2E] ClothBall-EE=" << ee_cpu_total_ms
+                  << " ms" << std::endl;
+
+        write_json_result(
+            "cloth_ball_ee",
+            "Cloth-Ball：边-边",
+            ee_cpu_kernel_ms,
+            ee_gpu_ms,
+            ee_cpu_total_ms,
+            ee_overlaps.size(),
+            /*passed=*/true);
+    }
+
+    // 与 Mathematica 真值对比（对齐 CUDA 偏移逻辑）
+    int offset = static_cast<int>(vertex_boxes.size());
+    for (auto& [a, b] : ee_overlaps) {
+        a += offset;
+        b += offset;
+    }
+    offset += static_cast<int>(edge_boxes.size());
+    for (auto& [v, f] : vf_overlaps) {
+        f += offset; // faces 偏移
+    }
+
+    scalable_ccd::compare_mathematica(vf_overlaps, vf_gt);
+    scalable_ccd::compare_mathematica(ee_overlaps, ee_gt);
 }
 #else
 TEST_CASE("Metal backend unavailable - skipped", "[broad_phase][metal][skip]")

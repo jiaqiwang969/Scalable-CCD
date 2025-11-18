@@ -217,6 +217,7 @@ std::vector<std::pair<int, int>> BroadPhase::detect_overlaps_partial(
 {
 #if SCALABLE_CCD_METAL_ENABLED
     last_gpu_ms_ = -1.0;
+    last_real_count_ = 0;
     if (nboxes_ == 0 || max_overlap_cutoff == 0 || start_box_id >= nboxes_) {
         return {};
     }
@@ -283,6 +284,7 @@ std::vector<std::pair<int, int>> BroadPhase::detect_overlaps_partial(
     }
 
     uint32_t real_count = *reinterpret_cast<uint32_t*>(buf_counter->contents());
+    last_real_count_ = real_count;
     uint32_t written = std::min<uint32_t>(real_count, overlaps_capacity);
     std::vector<std::pair<int, int>> out;
     out.resize(written);
