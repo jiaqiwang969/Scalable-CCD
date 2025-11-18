@@ -69,6 +69,13 @@ public:
         uint32_t max_overlap_cutoff,
         uint32_t overlaps_capacity);
 
+    // 循环调用 detect_overlaps_partial 直至覆盖全部 boxes，自动按 cutoff 推进，
+    // 在溢出时扩容/重试，返回全量 overlaps。
+    std::vector<std::pair<int, int>> detect_overlaps(
+        bool two_lists,
+        uint32_t max_overlap_cutoff,
+        uint32_t overlaps_capacity_hint = 0);
+
 private:
     struct Impl;
     Impl* impl_ = nullptr;

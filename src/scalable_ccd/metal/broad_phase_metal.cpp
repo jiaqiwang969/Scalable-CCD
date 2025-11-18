@@ -302,5 +302,53 @@ std::vector<std::pair<int, int>> BroadPhase::detect_overlaps_partial(
 #endif
 }
 
+std::vector<std::pair<int, int>> BroadPhase::detect_overlaps(
+    bool two_lists,
+    uint32_t max_overlap_cutoff,
+    uint32_t overlaps_capacity_hint)
+{
+#if SCALABLE_CCD_METAL_ENABLED
+    std::vector<std::pair<int, int>> all;
+    if (nboxes_ == 0) {
+        return all;
+    }
+    // 默认 cutoff = 总数
+    if (max_overlap_cutoff == 0) {
+        max_overlap_cutoff = nboxes_;
+    }
+    // 默认容量估算
+    uint32_t capacity = overlaps_capacity_hint;
+    if (capacity == 0) {
+        capacity =
+            static_cast<uint32_t>(std::max<uint64_t>(nboxes_ / 2 + 4096, 4096));
+    }
+
+    uint32_t start = 0;
+    while (start < nboxes_) {
+        bool done = false;
+        uint32_t cutoff = std::min<uint32_t>(max_overlap_cutoff, nboxes_ - start);
+        while (!done) {
+            auto batch = detect_overlaps_partial(
+                two_lists, start, cutoff, capacity);
+            if (last_real_count_ > capacity) {
+                // 扩容重试
+                capacity = static_cast<uint32_t>(last_real_count_ * 1.2 + 4096);
+                continue;
+            }
+            // 成功
+            all.insert(all.end(), batch.begin(), batch.end());
+            done = true;
+        }
+        start += cutoff;
+    }
+    return all;
+#else
+    (void)two_lists;
+    (void)max_overlap_cutoff;
+    (void)overlaps_capacity_hint;
+    throw std::runtime_error("Metal backend not available on this platform");
+#endif
+}
+
 } // namespace metal
 } // namespace scalable_ccd

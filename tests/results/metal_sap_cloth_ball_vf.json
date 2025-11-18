@@ -2,11 +2,11 @@
   "backend": "metal",
   "case_name": "Cloth-Ball：顶点-面",
   "category": "broad_phase_sap",
-  "cpu_ms": 10.791583,
-  "cpu_total_ms": 65.981792,
-  "gpu_ms": 9.63200000114739,
+  "cpu_ms": 10.940875,
+  "cpu_total_ms": 66.664125,
+  "gpu_ms": 9.768708318006247,
   "overlaps_count": 1655541,
   "passed": true,
   "slug": "cloth_ball_vf",
-  "timestamp": 1763482585
+  "timestamp": 1763483728
 }

@@ -174,10 +174,10 @@ TEST_CASE("Metal SAP 对拍：单列表链式重叠", "[broad_phase][metal]")
     {
         scalable_ccd::Timer t;
         t.start();
-        out = bp.detect_overlaps_partial(
-            /*two_lists=*/false, /*start=*/0,
+        out = bp.detect_overlaps(
+            /*two_lists=*/false,
             /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
-            /*overlaps_capacity=*/1024);
+            /*overlaps_capacity_hint=*/1024);
         t.stop();
         cpu_ms = t.getElapsedTimeInMilliSec();
         gpu_ms = bp.last_gpu_ms();
@@ -222,10 +222,10 @@ TEST_CASE("Metal SAP 对拍：单列表共享顶点过滤", "[broad_phase][metal
     {
         scalable_ccd::Timer t;
         t.start();
-        out = bp.detect_overlaps_partial(
-            /*two_lists=*/false, /*start=*/0,
+        out = bp.detect_overlaps(
+            /*two_lists=*/false,
             /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
-            /*overlaps_capacity=*/16);
+            /*overlaps_capacity_hint=*/16);
         t.stop();
         cpu_ms = t.getElapsedTimeInMilliSec();
         gpu_ms = bp.last_gpu_ms();
@@ -272,10 +272,10 @@ TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
     {
         scalable_ccd::Timer t;
         t.start();
-        out = bp.detect_overlaps_partial(
-            /*two_lists=*/true, /*start=*/0,
+        out = bp.detect_overlaps(
+            /*two_lists=*/true,
             /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
-            /*overlaps_capacity=*/16);
+            /*overlaps_capacity_hint=*/16);
         t.stop();
         cpu_ms = t.getElapsedTimeInMilliSec();
         gpu_ms = bp.last_gpu_ms();
