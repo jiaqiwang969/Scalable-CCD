@@ -24,8 +24,9 @@ namespace fs = std::filesystem;
 static void write_json_result(
     const std::string& slug,
     const std::string& case_name,
-    const double cpu_ms,
+    const double cpu_kernel_ms,
     const double gpu_ms,
+    const double cpu_total_ms,
     const size_t overlaps_count,
     const bool passed)
 {
@@ -45,7 +46,8 @@ static void write_json_result(
         j["category"] = "broad_phase_sap";
         j["case_name"] = case_name;
         j["slug"] = slug;
-        j["cpu_ms"] = cpu_ms;
+        j["cpu_ms"] = cpu_kernel_ms;
+        j["cpu_total_ms"] = cpu_total_ms;
         j["gpu_ms"] = gpu_ms;
         j["overlaps_count"] = overlaps_count;
         j["passed"] = passed;
@@ -108,11 +110,15 @@ TEST_CASE("Metal SAP 对拍：单列表链式重叠", "[broad_phase][metal]")
     sort_pairs(gt);
 
     // Metal
+    scalable_ccd::Timer t_total;
+    t_total.start();
     scalable_ccd::metal::MetalAABBsSoA soa;
     scalable_ccd::metal::make_soa_one_list(boxes, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
     bp.upload(soa);
     std::vector<Pair> out;
+    double cpu_ms = 0.0;
+    double gpu_ms = -1.0;
     {
         scalable_ccd::Timer t;
         t.start();
@@ -121,18 +127,22 @@ TEST_CASE("Metal SAP 对拍：单列表链式重叠", "[broad_phase][metal]")
             /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
             /*overlaps_capacity=*/1024);
         t.stop();
-        const double cpu_ms = t.getElapsedTimeInMilliSec();
-        const double gpu_ms = bp.last_gpu_ms();
+        cpu_ms = t.getElapsedTimeInMilliSec();
+        gpu_ms = bp.last_gpu_ms();
         std::cout << "[Metal-SAP] SingleList-Chain MS=" << cpu_ms << std::endl;
         std::cout << "[Metal-GPU-MS] SingleList-Chain MS=" << gpu_ms << std::endl;
-        write_json_result(
-            "single_list_chain",
-            "单列表：链式重叠",
-            cpu_ms,
-            gpu_ms,
-            out.size(),
-            /*passed=*/true);
     }
+    t_total.stop();
+    const double total_ms = t_total.getElapsedTimeInMilliSec();
+    std::cout << "[Metal-SAP-E2E] SingleList-Chain MS=" << total_ms << std::endl;
+    write_json_result(
+        "single_list_chain",
+        "单列表：链式重叠",
+        cpu_ms,
+        gpu_ms,
+        total_ms,
+        out.size(),
+        /*passed=*/true);
     sort_pairs(out);
     REQUIRE(out == gt);
 }
@@ -148,11 +158,15 @@ TEST_CASE("Metal SAP 对拍：单列表共享顶点过滤", "[broad_phase][metal
     scalable_ccd::sort_and_sweep(boxes, sort_axis, gt);
     sort_pairs(gt);
 
+    scalable_ccd::Timer t_total;
+    t_total.start();
     scalable_ccd::metal::MetalAABBsSoA soa;
     scalable_ccd::metal::make_soa_one_list(boxes, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
     bp.upload(soa);
     std::vector<Pair> out;
+    double cpu_ms = 0.0;
+    double gpu_ms = -1.0;
     {
         scalable_ccd::Timer t;
         t.start();
@@ -161,18 +175,22 @@ TEST_CASE("Metal SAP 对拍：单列表共享顶点过滤", "[broad_phase][metal
             /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
             /*overlaps_capacity=*/16);
         t.stop();
-        const double cpu_ms = t.getElapsedTimeInMilliSec();
-        const double gpu_ms = bp.last_gpu_ms();
+        cpu_ms = t.getElapsedTimeInMilliSec();
+        gpu_ms = bp.last_gpu_ms();
         std::cout << "[Metal-SAP] SingleList-SharedVertexFiltered MS=" << cpu_ms << std::endl;
         std::cout << "[Metal-GPU-MS] SingleList-SharedVertexFiltered MS=" << gpu_ms << std::endl;
-        write_json_result(
-            "single_list_shared_vertex_filtered",
-            "单列表：共享顶点过滤",
-            cpu_ms,
-            gpu_ms,
-            out.size(),
-            /*passed=*/true);
     }
+    t_total.stop();
+    const double total_ms = t_total.getElapsedTimeInMilliSec();
+    std::cout << "[Metal-SAP-E2E] SingleList-SharedVertexFiltered MS=" << total_ms << std::endl;
+    write_json_result(
+        "single_list_shared_vertex_filtered",
+        "单列表：共享顶点过滤",
+        cpu_ms,
+        gpu_ms,
+        total_ms,
+        out.size(),
+        /*passed=*/true);
     sort_pairs(out);
     REQUIRE(out == gt);
 }
@@ -190,11 +208,15 @@ TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
     scalable_ccd::sort_and_sweep(A, B, sort_axis, gt);
     sort_pairs(gt);
 
+    scalable_ccd::Timer t_total;
+    t_total.start();
     scalable_ccd::metal::MetalAABBsSoA soa;
     scalable_ccd::metal::make_soa_two_lists(A, B, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
     bp.upload(soa);
     std::vector<Pair> out;
+    double cpu_ms = 0.0;
+    double gpu_ms = -1.0;
     {
         scalable_ccd::Timer t;
         t.start();
@@ -203,18 +225,22 @@ TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
             /*max_overlap_cutoff=*/static_cast<uint32_t>(soa.size()),
             /*overlaps_capacity=*/16);
         t.stop();
-        const double cpu_ms = t.getElapsedTimeInMilliSec();
-        const double gpu_ms = bp.last_gpu_ms();
+        cpu_ms = t.getElapsedTimeInMilliSec();
+        gpu_ms = bp.last_gpu_ms();
         std::cout << "[Metal-SAP] TwoLists-CrossOnly MS=" << cpu_ms << std::endl;
         std::cout << "[Metal-GPU-MS] TwoLists-CrossOnly MS=" << gpu_ms << std::endl;
-        write_json_result(
-            "two_lists_cross_only",
-            "双列表：仅跨列表配对",
-            cpu_ms,
-            gpu_ms,
-            out.size(),
-            /*passed=*/true);
     }
+    t_total.stop();
+    const double total_ms = t_total.getElapsedTimeInMilliSec();
+    std::cout << "[Metal-SAP-E2E] TwoLists-CrossOnly MS=" << total_ms << std::endl;
+    write_json_result(
+        "two_lists_cross_only",
+        "双列表：仅跨列表配对",
+        cpu_ms,
+        gpu_ms,
+        total_ms,
+        out.size(),
+        /*passed=*/true);
     sort_pairs(out);
     REQUIRE(out == gt);
 }

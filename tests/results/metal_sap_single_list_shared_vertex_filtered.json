@@ -2,10 +2,11 @@
   "backend": "metal",
   "case_name": "单列表：共享顶点过滤",
   "category": "broad_phase_sap",
-  "cpu_ms": 3.202709,
-  "gpu_ms": 0.014999997802078724,
+  "cpu_ms": 2.898875,
+  "cpu_total_ms": 30.575959,
+  "gpu_ms": 0.014749995898455381,
   "overlaps_count": 0,
   "passed": true,
   "slug": "single_list_shared_vertex_filtered",
-  "timestamp": 1763267309
+  "timestamp": 1763459557
 }

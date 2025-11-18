@@ -2,11 +2,13 @@
 
 - 用例标识: `single_list_shared_vertex_filtered`
 - 类别: `broad_phase_sap`
-- 结果生成时间: 2025-11-16 12:57:07
+- 结果生成时间: 2025-11-18 17:53:08
 
 ## 计时对比
 - CUDA Host(ms): 11.439
-- Metal Host(ms): 3.203  (相对CUDA: -72.00%)
+- Metal Host(ms): 2.899  (相对CUDA: -74.66%)
+- CUDA E2E Host(ms): N/A
+- Metal E2E Host(ms): 30.576  (相对CUDA: N/A)
 - CUDA GPU(ms): 11.436
 - Metal GPU(ms): 0.015  (相对CUDA: -99.87%)
 
@@ -24,4 +26,4 @@
 
 ## 元信息
 - CUDA 时间戳: 2025-11-16 11:52:20
-- Metal 时间戳: 2025-11-16 12:28:29
+- Metal 时间戳: 2025-11-18 17:52:37

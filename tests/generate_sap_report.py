@@ -45,8 +45,10 @@ def write_case_report(slug, c, m):
     # Prepare fields with defaults
     cname = m.get("case_name") or c.get("case_name") or slug
     c_cpu = c.get("cpu_ms")
+    c_cpu_total = c.get("cpu_total_ms")
     c_gpu = c.get("gpu_ms")
     m_cpu = m.get("cpu_ms")
+    m_cpu_total = m.get("cpu_total_ms")
     m_gpu = m.get("gpu_ms")
     c_cnt = c.get("overlaps_count")
     m_cnt = m.get("overlaps_count")
@@ -58,6 +60,7 @@ def write_case_report(slug, c, m):
     cnt_equal = (c_cnt == m_cnt)
     # Differences
     host_pct = pct_diff(m_cpu, c_cpu)
+    host_total_pct = pct_diff(m_cpu_total, c_cpu_total)
     gpu_pct = pct_diff(m_gpu, c_gpu)
 
     lines = []
@@ -70,6 +73,8 @@ def write_case_report(slug, c, m):
     lines.append("## 计时对比")
     lines.append(f"- CUDA Host(ms): {fmt_ms(c_cpu)}")
     lines.append(f"- Metal Host(ms): {fmt_ms(m_cpu)}  (相对CUDA: {host_pct})")
+    lines.append(f"- CUDA E2E Host(ms): {fmt_ms(c_cpu_total)}")
+    lines.append(f"- Metal E2E Host(ms): {fmt_ms(m_cpu_total)}  (相对CUDA: {host_total_pct})")
     lines.append(f"- CUDA GPU(ms): {fmt_ms(c_gpu)}")
     lines.append(f"- Metal GPU(ms): {fmt_ms(m_gpu)}  (相对CUDA: {gpu_pct})")
     lines.append("")
@@ -115,8 +120,8 @@ def main():
     summary = []
     summary.append("# SAP 对比报告索引")
     summary.append("")
-    summary.append("| 用例 | CUDA Host(ms) | Metal Host(ms) | ΔHost(%) | CUDA GPU(ms) | Metal GPU(ms) | ΔGPU(%) | Overlaps 一致 | 链接 |")
-    summary.append("|---|---:|---:|---:|---:|---:|---:|:---:|:---:|")
+    summary.append("| 用例 | CUDA Host(ms) | Metal Host(ms) | ΔHost(%) | CUDA E2E(ms) | Metal E2E(ms) | ΔE2E(%) | CUDA GPU(ms) | Metal GPU(ms) | ΔGPU(%) | Overlaps 一致 | 链接 |")
+    summary.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|:---:|")
     for slug in slugs:
         c = cuda[slug]
         m = metal[slug]
@@ -139,4 +144,3 @@ def main():
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

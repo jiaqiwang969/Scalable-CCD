@@ -2,10 +2,11 @@
   "backend": "metal",
   "case_name": "双列表：仅跨列表配对",
   "category": "broad_phase_sap",
-  "cpu_ms": 2.930875,
-  "gpu_ms": 0.017208338249474764,
+  "cpu_ms": 2.720542,
+  "cpu_total_ms": 30.681875,
+  "gpu_ms": 0.016375008272007108,
   "overlaps_count": 2,
   "passed": true,
   "slug": "two_lists_cross_only",
-  "timestamp": 1763267309
+  "timestamp": 1763459557
 }
