@@ -2,8 +2,12 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include "io.hpp"
+#include "ground_truth.hpp"
+
 #include <scalable_ccd/broad_phase/aabb.hpp>
 #include <scalable_ccd/broad_phase/sort_and_sweep.hpp>
+#include <scalable_ccd/config.hpp>
 
 #include <scalable_ccd/cuda/broad_phase/aabb.cuh>
 #include <scalable_ccd/cuda/broad_phase/broad_phase.cuh>
@@ -25,6 +29,8 @@ using CAABB = scalable_ccd::cuda::AABB;    // CUDA AABB
 using Pair = std::pair<int, int>;
 
 namespace fs = std::filesystem;
+using scalable_ccd::compare_mathematica;
+using scalable_ccd::parse_mesh;
 
 // 规范化 pair（first<=second）并整体排序，便于结果比较
 static void sort_pairs(std::vector<Pair>& v)
@@ -278,4 +284,126 @@ TEST_CASE("CUDA SAP 对拍：双列表仅跨列表", "[broad_phase][cuda]")
         /*passed=*/true);
     sort_pairs(out);
     REQUIRE(out == gt);
+}
+
+TEST_CASE("CUDA SAP 对拍：Cloth-Ball 实测", "[broad_phase][cuda][cloth-ball]")
+{
+    const fs::path data(SCALABLE_CCD_DATA_DIR);
+    const fs::path file_t0 =
+        data / "cloth-ball" / "frames" / "cloth_ball92.ply";
+    const fs::path file_t1 =
+        data / "cloth-ball" / "frames" / "cloth_ball93.ply";
+    const fs::path vf_gt = data / "cloth-ball" / "boxes" / "92vf.json";
+    const fs::path ee_gt = data / "cloth-ball" / "boxes" / "92ee.json";
+
+    Eigen::MatrixXd vertices_t0, vertices_t1;
+    Eigen::MatrixXi edges, faces;
+    parse_mesh(file_t0, file_t1, vertices_t0, vertices_t1, faces, edges);
+
+    std::vector<CAABB> vertex_boxes, edge_boxes, face_boxes;
+    scalable_ccd::cuda::build_vertex_boxes(vertices_t0, vertices_t1, vertex_boxes);
+    scalable_ccd::cuda::build_edge_boxes(vertex_boxes, edges, edge_boxes);
+    scalable_ccd::cuda::build_face_boxes(vertex_boxes, faces, face_boxes);
+
+    std::vector<Pair> vf_overlaps, ee_overlaps;
+
+    // 顶点-面
+    double vf_cpu_kernel_ms = 0.0;
+    double vf_gpu_ms = 0.0;
+    double vf_cpu_total_ms = 0.0;
+    {
+        scalable_ccd::Timer t_total;
+        t_total.start();
+        auto dev_vertices =
+            std::make_shared<scalable_ccd::cuda::DeviceAABBs>(vertex_boxes);
+        auto dev_faces =
+            std::make_shared<scalable_ccd::cuda::DeviceAABBs>(face_boxes);
+        scalable_ccd::cuda::BroadPhase bp;
+        bp.build(dev_vertices, dev_faces);
+
+        scalable_ccd::Timer t_cpu;
+        scalable_ccd::cuda::Timer t_gpu;
+        t_cpu.start();
+        t_gpu.start();
+        vf_overlaps = bp.detect_overlaps();
+        t_gpu.stop();
+        t_cpu.stop();
+
+        vf_cpu_kernel_ms = t_cpu.getElapsedTimeInMilliSec();
+        vf_gpu_ms = t_gpu.getElapsedTimeInMilliSec();
+        t_total.stop();
+        vf_cpu_total_ms = t_total.getElapsedTimeInMilliSec();
+
+        std::cout << "[CUDA-SAP] ClothBall-VF Host=" << vf_cpu_kernel_ms
+                  << " ms" << std::endl;
+        std::cout << "[CUDA-GPU-MS] ClothBall-VF=" << vf_gpu_ms << " ms"
+                  << std::endl;
+        std::cout << "[CUDA-SAP-E2E] ClothBall-VF=" << vf_cpu_total_ms << " ms"
+                  << std::endl;
+
+        write_json_result(
+            "cloth_ball_vf",
+            "Cloth-Ball：顶点-面",
+            vf_cpu_kernel_ms,
+            vf_gpu_ms,
+            vf_cpu_total_ms,
+            vf_overlaps.size(),
+            /*passed=*/true);
+    }
+
+    // 边-边
+    double ee_cpu_kernel_ms = 0.0;
+    double ee_gpu_ms = 0.0;
+    double ee_cpu_total_ms = 0.0;
+    {
+        scalable_ccd::Timer t_total;
+        t_total.start();
+        auto dev_edges =
+            std::make_shared<scalable_ccd::cuda::DeviceAABBs>(edge_boxes);
+        scalable_ccd::cuda::BroadPhase bp;
+        bp.build(dev_edges);
+
+        scalable_ccd::Timer t_cpu;
+        scalable_ccd::cuda::Timer t_gpu;
+        t_cpu.start();
+        t_gpu.start();
+        ee_overlaps = bp.detect_overlaps();
+        t_gpu.stop();
+        t_cpu.stop();
+
+        ee_cpu_kernel_ms = t_cpu.getElapsedTimeInMilliSec();
+        ee_gpu_ms = t_gpu.getElapsedTimeInMilliSec();
+        t_total.stop();
+        ee_cpu_total_ms = t_total.getElapsedTimeInMilliSec();
+
+        std::cout << "[CUDA-SAP] ClothBall-EE Host=" << ee_cpu_kernel_ms
+                  << " ms" << std::endl;
+        std::cout << "[CUDA-GPU-MS] ClothBall-EE=" << ee_gpu_ms << " ms"
+                  << std::endl;
+        std::cout << "[CUDA-SAP-E2E] ClothBall-EE=" << ee_cpu_total_ms << " ms"
+                  << std::endl;
+
+        write_json_result(
+            "cloth_ball_ee",
+            "Cloth-Ball：边-边",
+            ee_cpu_kernel_ms,
+            ee_gpu_ms,
+            ee_cpu_total_ms,
+            ee_overlaps.size(),
+            /*passed=*/true);
+    }
+
+    // 与 Mathematica 真值对比
+    int offset = vertex_boxes.size();
+    for (auto& [a, b] : ee_overlaps) {
+        a += offset;
+        b += offset;
+    }
+    offset += edge_boxes.size();
+    for (auto& [v, f] : vf_overlaps) {
+        f += offset;
+    }
+
+    compare_mathematica(vf_overlaps, vf_gt);
+    compare_mathematica(ee_overlaps, ee_gt);
 }

@@ -1,0 +1,12 @@
+{
+  "backend": "cuda",
+  "case_name": "Cloth-Ball：顶点-面",
+  "category": "broad_phase_sap",
+  "cpu_ms": 46.942076,
+  "cpu_total_ms": 258.146077,
+  "gpu_ms": 46.93967819213867,
+  "overlaps_count": 1655541,
+  "passed": true,
+  "slug": "cloth_ball_vf",
+  "timestamp": 1763463887
+}

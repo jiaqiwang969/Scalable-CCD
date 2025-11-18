@@ -2,11 +2,11 @@
   "backend": "cuda",
   "case_name": "双列表：仅跨列表配对",
   "category": "broad_phase_sap",
-  "cpu_ms": 11.282923,
-  "cpu_total_ms": 211.017234,
-  "gpu_ms": 11.278623580932617,
+  "cpu_ms": 11.529921,
+  "cpu_total_ms": 222.332994,
+  "gpu_ms": 11.52569580078125,
   "overlaps_count": 2,
   "passed": true,
   "slug": "two_lists_cross_only",
-  "timestamp": 1763461156
+  "timestamp": 1763463887
 }

@@ -2,14 +2,14 @@
 
 - 用例标识: `single_list_shared_vertex_filtered`
 - 类别: `broad_phase_sap`
-- 结果生成时间: 2025-11-18 18:20:37
+- 结果生成时间: 2025-11-18 19:05:15
 
 ## 计时对比
-- CUDA Host(ms): 11.304
-- Metal Host(ms): 2.899  (相对CUDA: -74.36%)
-- CUDA E2E Host(ms): 212.550
-- Metal E2E Host(ms): 30.576  (相对CUDA: -85.61%)
-- CUDA GPU(ms): 11.301
+- CUDA Host(ms): 11.053
+- Metal Host(ms): 2.899  (相对CUDA: -73.77%)
+- CUDA E2E Host(ms): 225.155
+- Metal E2E Host(ms): 30.576  (相对CUDA: -86.42%)
+- CUDA GPU(ms): 11.050
 - Metal GPU(ms): 0.015  (相对CUDA: -99.87%)
 
 ## 重叠数量对比
@@ -25,5 +25,5 @@
 - 结果一致，功能对齐。
 
 ## 元信息
-- CUDA 时间戳: 2025-11-18 18:19:16
+- CUDA 时间戳: 2025-11-18 19:04:46
 - Metal 时间戳: 2025-11-18 17:52:37
