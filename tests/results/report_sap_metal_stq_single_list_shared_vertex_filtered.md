@@ -1,4 +1,4 @@
-# SAP 对比报告 - 单列表：共享顶点过滤 (SAP)
+# SAP 对比报告 - 单列表：共享顶点过滤 (STQ)
 
 - 用例标识: `single_list_shared_vertex_filtered`
 - 类别: `broad_phase_sap`
@@ -6,11 +6,11 @@
 
 ## 计时对比
 - CUDA Host(ms): 11.053
-- Metal Host(ms): 2.971  (相对CUDA: -73.12%)
+- Metal Host(ms): 3.500  (相对CUDA: -68.33%)
 - CUDA E2E Host(ms): 225.155
-- Metal E2E Host(ms): 27.620  (相对CUDA: -87.73%)
+- Metal E2E Host(ms): 4.072  (相对CUDA: -98.19%)
 - CUDA GPU(ms): 11.050
-- Metal GPU(ms): 0.019  (相对CUDA: -99.83%)
+- Metal GPU(ms): 0.034  (相对CUDA: -99.69%)
 
 ## 重叠数量对比
 - CUDA overlaps: 0

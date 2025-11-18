@@ -1,4 +1,4 @@
-# SAP 对比报告 - 单列表：链式重叠 (SAP)
+# SAP 对比报告 - 单列表：链式重叠 (STQ)
 
 - 用例标识: `single_list_chain`
 - 类别: `broad_phase_sap`
@@ -6,11 +6,11 @@
 
 ## 计时对比
 - CUDA Host(ms): 11.170
-- Metal Host(ms): 3.904  (相对CUDA: -65.05%)
+- Metal Host(ms): 3.524  (相对CUDA: -68.45%)
 - CUDA E2E Host(ms): 2310.286
-- Metal E2E Host(ms): 29.468  (相对CUDA: -98.72%)
+- Metal E2E Host(ms): 3.965  (相对CUDA: -99.83%)
 - CUDA GPU(ms): 11.167
-- Metal GPU(ms): 0.015  (相对CUDA: -99.87%)
+- Metal GPU(ms): 0.020  (相对CUDA: -99.82%)
 
 ## 重叠数量对比
 - CUDA overlaps: 3

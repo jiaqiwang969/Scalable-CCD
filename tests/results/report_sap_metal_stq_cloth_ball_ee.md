@@ -1,4 +1,4 @@
-# SAP 对比报告 - Cloth-Ball：边-边 (SAP)
+# SAP 对比报告 - Cloth-Ball：边-边 (STQ)
 
 - 用例标识: `cloth_ball_ee`
 - 类别: `broad_phase_sap`
@@ -6,11 +6,11 @@
 
 ## 计时对比
 - CUDA Host(ms): 68.003
-- Metal Host(ms): 12.984  (相对CUDA: -80.91%)
+- Metal Host(ms): 72.918  (相对CUDA: 7.23%)
 - CUDA E2E Host(ms): 83.292
-- Metal E2E Host(ms): 30.025  (相对CUDA: -63.95%)
+- Metal E2E Host(ms): 143.995  (相对CUDA: 72.88%)
 - CUDA GPU(ms): 68.000
-- Metal GPU(ms): 7.915  (相对CUDA: -88.36%)
+- Metal GPU(ms): 69.029  (相对CUDA: 1.51%)
 
 ## 重叠数量对比
 - CUDA overlaps: 5197332
@@ -26,4 +26,4 @@
 
 ## 元信息
 - CUDA 时间戳: 2025-11-18 19:04:47
-- Metal 时间戳: 2025-11-19 01:11:59
+- Metal 时间戳: 2025-11-19 01:12:02

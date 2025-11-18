@@ -127,6 +127,8 @@ struct BroadPhase::Impl {
     NS::SharedPtr<MTL::Library> library;
     NS::SharedPtr<MTL::ComputePipelineState> pso_one;
     NS::SharedPtr<MTL::ComputePipelineState> pso_two;
+    NS::SharedPtr<MTL::ComputePipelineState> pso_one_stq;
+    NS::SharedPtr<MTL::ComputePipelineState> pso_two_stq;
 
     NS::SharedPtr<MTL::Buffer> buf_sorted_major;
     NS::SharedPtr<MTL::Buffer> buf_mini_min;
@@ -171,8 +173,14 @@ BroadPhase::BroadPhase(const std::string& metallib_path)
         impl_->library->newFunction(NS::String::string("sweep_and_prune_one_list", NS::UTF8StringEncoding)));
     auto fn_two = NS::TransferPtr(
         impl_->library->newFunction(NS::String::string("sweep_and_prune_two_lists", NS::UTF8StringEncoding)));
+    auto fn_one_stq = NS::TransferPtr(
+        impl_->library->newFunction(NS::String::string("sweep_and_tiniest_queue_one_list", NS::UTF8StringEncoding)));
+    auto fn_two_stq = NS::TransferPtr(
+        impl_->library->newFunction(NS::String::string("sweep_and_tiniest_queue_two_lists", NS::UTF8StringEncoding)));
     impl_->pso_one = NS::TransferPtr(impl_->device->newComputePipelineState(fn_one.get(), &err));
     impl_->pso_two = NS::TransferPtr(impl_->device->newComputePipelineState(fn_two.get(), &err));
+    impl_->pso_one_stq = NS::TransferPtr(impl_->device->newComputePipelineState(fn_one_stq.get(), &err));
+    impl_->pso_two_stq = NS::TransferPtr(impl_->device->newComputePipelineState(fn_two_stq.get(), &err));
     if (!impl_->pso_one || !impl_->pso_two) {
         throw std::runtime_error("Failed to create compute pipeline states");
     }
@@ -233,7 +241,16 @@ std::vector<std::pair<int, int>> BroadPhase::detect_overlaps_partial(
 
     auto cmd = NS::TransferPtr(q->commandBuffer());
     auto enc = NS::TransferPtr(cmd->computeCommandEncoder());
-    auto pso = two_lists ? impl_->pso_two.get() : impl_->pso_one.get();
+    NS::SharedPtr<MTL::ComputePipelineState> pso_ptr;
+    if (use_stq_) {
+        pso_ptr = two_lists ? impl_->pso_two_stq : impl_->pso_one_stq;
+    } else {
+        pso_ptr = two_lists ? impl_->pso_two : impl_->pso_one;
+    }
+    if (!pso_ptr) {
+        pso_ptr = two_lists ? impl_->pso_two : impl_->pso_one;
+    }
+    auto pso = pso_ptr.get();
     enc->setComputePipelineState(pso);
 
     enc->setBuffer(impl_->buf_sorted_major.get(), 0, 0);

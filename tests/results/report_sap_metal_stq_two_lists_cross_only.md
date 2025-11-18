@@ -1,4 +1,4 @@
-# SAP 对比报告 - 双列表：仅跨列表配对 (SAP)
+# SAP 对比报告 - 双列表：仅跨列表配对 (STQ)
 
 - 用例标识: `two_lists_cross_only`
 - 类别: `broad_phase_sap`
@@ -6,11 +6,11 @@
 
 ## 计时对比
 - CUDA Host(ms): 11.530
-- Metal Host(ms): 2.543  (相对CUDA: -77.95%)
+- Metal Host(ms): 3.013  (相对CUDA: -73.87%)
 - CUDA E2E Host(ms): 222.333
-- Metal E2E Host(ms): 26.543  (相对CUDA: -88.06%)
+- Metal E2E Host(ms): 4.535  (相对CUDA: -97.96%)
 - CUDA GPU(ms): 11.526
-- Metal GPU(ms): 0.015  (相对CUDA: -99.87%)
+- Metal GPU(ms): 0.023  (相对CUDA: -99.80%)
 
 ## 重叠数量对比
 - CUDA overlaps: 2

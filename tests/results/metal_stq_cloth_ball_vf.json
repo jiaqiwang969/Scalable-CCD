@@ -1,0 +1,12 @@
+{
+  "backend": "metal_stq",
+  "case_name": "Cloth-Ball：顶点-面",
+  "category": "broad_phase_stq",
+  "cpu_ms": 87.927209,
+  "cpu_total_ms": 182.173833,
+  "gpu_ms": 86.6458750097081,
+  "overlaps_count": 1655541,
+  "passed": true,
+  "slug": "cloth_ball_vf",
+  "timestamp": 1763485922
+}

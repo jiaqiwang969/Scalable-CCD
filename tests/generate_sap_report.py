@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Generate per-case SAP comparison reports between CUDA and Metal.
-Inputs: tests/results/cuda_sap_*.json and metal_sap_*.json
-Outputs: tests/results/report_sap_<slug>.md and a summary index.
+Generate per-case SAP/STQ comparison reports between CUDA and Metal variants.
+Inputs: tests/results/cuda_sap_*.json and metal[_stq]_sap_*.json
+Outputs: tests/results/report_sap[_variant]_<slug>.md and a summary index.
 """
 import json
 import sys
@@ -14,10 +14,10 @@ RESULTS_DIR = Path(__file__).parent / "results"
 
 def load_results(prefix: str):
     data = {}
-    for p in sorted(RESULTS_DIR.glob(f"{prefix}_sap_*.json")):
+    for p in sorted(RESULTS_DIR.glob(f"{prefix}_*.json")):
         try:
             j = json.loads(p.read_text(encoding="utf-8"))
-            slug = j.get("slug") or p.stem.split(prefix + "_sap_")[-1]
+            slug = j.get("slug") or p.stem.split(prefix + "_", 1)[-1]
             data[slug] = j
         except Exception as e:
             print(f"[WARN] Failed to parse {p}: {e}", file=sys.stderr)
@@ -41,7 +41,7 @@ def pct_diff(metal, cuda):
     except Exception:
         return "N/A"
 
-def write_case_report(slug, c, m):
+def write_case_report(slug, c, m, variant, variant_label):
     # Prepare fields with defaults
     cname = m.get("case_name") or c.get("case_name") or slug
     c_cpu = c.get("cpu_ms")
@@ -64,7 +64,7 @@ def write_case_report(slug, c, m):
     gpu_pct = pct_diff(m_gpu, c_gpu)
 
     lines = []
-    lines.append(f"# SAP 对比报告 - {cname}")
+    lines.append(f"# SAP 对比报告 - {cname} ({variant_label})")
     lines.append("")
     lines.append(f"- 用例标识: `{slug}`")
     lines.append(f"- 类别: `broad_phase_sap`")
@@ -100,7 +100,8 @@ def write_case_report(slug, c, m):
         lines.append(f"- Metal 时间戳: {time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(m_ts))}")
     lines.append("")
 
-    out = RESULTS_DIR / f"report_sap_{slug}.md"
+    suffix = "" if variant in ("metal", "metal_sap") else f"_{variant}"
+    out = RESULTS_DIR / f"report_sap{suffix}_{slug}.md"
     out.write_text("\n".join(lines), encoding="utf-8")
     print(f"[OK] Wrote {out}")
 
@@ -108,39 +109,50 @@ def main():
     if not RESULTS_DIR.exists():
         print(f"[ERR] results dir not found: {RESULTS_DIR}", file=sys.stderr)
         return 1
-    cuda = load_results("cuda")
-    metal = load_results("metal")
-    if not cuda or not metal:
-        print("[WARN] Missing cuda or metal results; nothing to compare.", file=sys.stderr)
-    # intersection of slugs
-    slugs = sorted(set(cuda.keys()) & set(metal.keys()))
-    if not slugs:
-        print("[WARN] No intersection of cuda and metal result slugs.", file=sys.stderr)
-    # index summary
+    cuda = load_results("cuda_sap")
+    variants = [("metal_sap", "SAP"), ("metal_stq", "STQ")]
+    if not cuda:
+        print("[WARN] Missing cuda results; nothing to compare.", file=sys.stderr)
     summary = []
-    summary.append("# SAP 对比报告索引")
+    summary.append("# SAP/STQ 对比报告索引")
     summary.append("")
-    summary.append("| 用例 | CUDA Host(ms) | Metal Host(ms) | ΔHost(%) | CUDA E2E(ms) | Metal E2E(ms) | ΔE2E(%) | CUDA GPU(ms) | Metal GPU(ms) | ΔGPU(%) | Overlaps 一致 | 链接 |")
-    summary.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|:---:|")
-    for slug in slugs:
-        c = cuda[slug]
-        m = metal[slug]
-        write_case_report(slug, c, m)
-        row = [
-            c.get("case_name") or slug,
-            fmt_ms(c.get("cpu_ms")),
-            fmt_ms(m.get("cpu_ms")),
-            pct_diff(m.get("cpu_ms"), c.get("cpu_ms")),
-            fmt_ms(c.get("cpu_total_ms")),
-            fmt_ms(m.get("cpu_total_ms")),
-            pct_diff(m.get("cpu_total_ms"), c.get("cpu_total_ms")),
-            fmt_ms(c.get("gpu_ms")),
-            fmt_ms(m.get("gpu_ms")),
-            pct_diff(m.get("gpu_ms"), c.get("gpu_ms")),
-            "✅" if c.get("overlaps_count") == m.get("overlaps_count") else "❌",
-            f"[详情](report_sap_{slug}.md)",
-        ]
-        summary.append("| " + " | ".join(row) + " |")
+
+    for variant_key, variant_label in variants:
+        metal = load_results(variant_key)
+        if not metal:
+            print(f"[WARN] Missing results for {variant_key}; skip.", file=sys.stderr)
+            continue
+        slugs = sorted(set(cuda.keys()) & set(metal.keys()))
+        if not slugs:
+            print(f"[WARN] No intersection of cuda and {variant_key} result slugs.", file=sys.stderr)
+            continue
+
+        summary.append(f"## Metal 变体：{variant_label} ({variant_key})")
+        summary.append("")
+        summary.append("| 用例 | CUDA Host(ms) | Metal Host(ms) | ΔHost(%) | CUDA E2E(ms) | Metal E2E(ms) | ΔE2E(%) | CUDA GPU(ms) | Metal GPU(ms) | ΔGPU(%) | Overlaps 一致 | 链接 |")
+        summary.append("|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|:---:|:---:|")
+        for slug in slugs:
+            c = cuda[slug]
+            m = metal[slug]
+            write_case_report(slug, c, m, variant_key, variant_label)
+            suffix = "" if variant_key in ("metal", "metal_sap") else f"_{variant_key}"
+            row = [
+                c.get("case_name") or slug,
+                fmt_ms(c.get("cpu_ms")),
+                fmt_ms(m.get("cpu_ms")),
+                pct_diff(m.get("cpu_ms"), c.get("cpu_ms")),
+                fmt_ms(c.get("cpu_total_ms")),
+                fmt_ms(m.get("cpu_total_ms")),
+                pct_diff(m.get("cpu_total_ms"), c.get("cpu_total_ms")),
+                fmt_ms(c.get("gpu_ms")),
+                fmt_ms(m.get("gpu_ms")),
+                pct_diff(m.get("gpu_ms"), c.get("gpu_ms")),
+                "✅" if c.get("overlaps_count") == m.get("overlaps_count") else "❌",
+                f"[详情](report_sap{suffix}_{slug}.md)",
+            ]
+            summary.append("| " + " | ".join(row) + " |")
+        summary.append("")
+
     (RESULTS_DIR / "report_sap_index.md").write_text("\n".join(summary), encoding="utf-8")
     print(f"[OK] Wrote {(RESULTS_DIR / 'report_sap_index.md')}")
     return 0

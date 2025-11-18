@@ -31,7 +31,8 @@ static void write_json_result(
     const double gpu_ms,
     const double cpu_total_ms,
     const size_t overlaps_count,
-    const bool passed)
+    const bool passed,
+    const std::string& backend_prefix = "metal_sap")
 {
     try {
         fs::path out_dir;
@@ -42,11 +43,13 @@ static void write_json_result(
 #endif
         fs::create_directories(out_dir);
         const fs::path out_path =
-            out_dir / fs::path("metal_sap_" + slug + ".json");
+            out_dir / fs::path(backend_prefix + "_" + slug + ".json");
 
         nlohmann::json j;
-        j["backend"] = "metal";
-        j["category"] = "broad_phase_sap";
+        j["backend"] = backend_prefix;
+        const bool is_stq =
+            backend_prefix.find("stq") != std::string::npos;
+        j["category"] = is_stq ? "broad_phase_stq" : "broad_phase_sap";
         j["case_name"] = case_name;
         j["slug"] = slug;
         j["cpu_ms"] = cpu_kernel_ms;
@@ -81,6 +84,16 @@ static void sort_pairs(std::vector<Pair>& v)
             std::swap(p.first, p.second);
     }
     std::sort(v.begin(), v.end());
+}
+
+static std::string tag_prefix(bool use_stq)
+{
+    return use_stq ? "[Metal-STQ]" : "[Metal-SAP]";
+}
+
+static std::string json_prefix(bool use_stq)
+{
+    return use_stq ? "metal_stq" : "metal_sap";
 }
 
 static AABB make_box(
@@ -146,27 +159,28 @@ static int auto_select_axis(
 }
 
 #if defined(SCALABLE_CCD_WITH_METAL) && defined(__APPLE__)
-TEST_CASE("Metal SAP 对拍：单列表链式重叠", "[broad_phase][metal]")
+namespace {
+
+void run_single_list_chain(bool use_stq)
 {
     std::vector<AABB> boxes;
-    boxes.push_back(make_box(1, 3, 0, 0.5, 0, 0.5, 0, 100, 200, 300));     // id 0
-    boxes.push_back(make_box(0, 2, 0, 0.5, 0, 0.5, 1, 101, 201, 301));     // id 1
-    boxes.push_back(make_box(2.5, 4, 0, 0.5, 0, 0.5, 2, 102, 202, 302));   // id 2
-    boxes.push_back(make_box(3.5, 5, 0, 0.5, 0, 0.5, 3, 103, 203, 303));   // id 3
-    boxes.push_back(make_box(10, 12, 0, 0.5, 0, 0.5, 4, 104, 204, 304));   // id 4
+    boxes.push_back(make_box(1, 3, 0, 0.5, 0, 0.5, 0, 100, 200, 300));
+    boxes.push_back(make_box(0, 2, 0, 0.5, 0, 0.5, 1, 101, 201, 301));
+    boxes.push_back(make_box(2.5, 4, 0, 0.5, 0, 0.5, 2, 102, 202, 302));
+    boxes.push_back(make_box(3.5, 5, 0, 0.5, 0, 0.5, 3, 103, 203, 303));
+    boxes.push_back(make_box(10, 12, 0, 0.5, 0, 0.5, 4, 104, 204, 304));
 
-    // CPU 预期
     int sort_axis = 0;
     std::vector<Pair> gt;
     scalable_ccd::sort_and_sweep(boxes, sort_axis, gt);
     sort_pairs(gt);
 
-    // Metal
     scalable_ccd::Timer t_total;
     t_total.start();
     scalable_ccd::metal::MetalAABBsSoA soa;
     scalable_ccd::metal::make_soa_one_list(boxes, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
+    bp.set_use_stq(use_stq);
     bp.upload(soa);
     std::vector<Pair> out;
     double cpu_ms = 0.0;
@@ -181,12 +195,15 @@ TEST_CASE("Metal SAP 对拍：单列表链式重叠", "[broad_phase][metal]")
         t.stop();
         cpu_ms = t.getElapsedTimeInMilliSec();
         gpu_ms = bp.last_gpu_ms();
-        std::cout << "[Metal-SAP] SingleList-Chain MS=" << cpu_ms << std::endl;
-        std::cout << "[Metal-GPU-MS] SingleList-Chain MS=" << gpu_ms << std::endl;
+        std::cout << tag_prefix(use_stq) << " SingleList-Chain MS=" << cpu_ms
+                  << std::endl;
+        std::cout << "[Metal-GPU-MS] SingleList-Chain MS=" << gpu_ms
+                  << std::endl;
     }
     t_total.stop();
     const double total_ms = t_total.getElapsedTimeInMilliSec();
-    std::cout << "[Metal-SAP-E2E] SingleList-Chain MS=" << total_ms << std::endl;
+    std::cout << tag_prefix(use_stq) << "-E2E SingleList-Chain MS="
+              << total_ms << std::endl;
     write_json_result(
         "single_list_chain",
         "单列表：链式重叠",
@@ -194,16 +211,17 @@ TEST_CASE("Metal SAP 对拍：单列表链式重叠", "[broad_phase][metal]")
         gpu_ms,
         total_ms,
         out.size(),
-        /*passed=*/true);
+        /*passed=*/true,
+        json_prefix(use_stq));
     sort_pairs(out);
     REQUIRE(out == gt);
 }
 
-TEST_CASE("Metal SAP 对拍：单列表共享顶点过滤", "[broad_phase][metal]")
+void run_single_list_shared_vertex(bool use_stq)
 {
     std::vector<AABB> boxes;
-    boxes.push_back(make_box(0, 2, 0, 0.5, 0, 0.5, 0, 100, 101, 102));     // id 0
-    boxes.push_back(make_box(1, 3, 0, 0.5, 0, 0.5, 1, 100, 999, 888));     // id 1 (共享 100)
+    boxes.push_back(make_box(0, 2, 0, 0.5, 0, 0.5, 0, 100, 101, 102));
+    boxes.push_back(make_box(1, 3, 0, 0.5, 0, 0.5, 1, 100, 999, 888));
 
     int sort_axis = 0;
     std::vector<Pair> gt;
@@ -215,6 +233,7 @@ TEST_CASE("Metal SAP 对拍：单列表共享顶点过滤", "[broad_phase][metal
     scalable_ccd::metal::MetalAABBsSoA soa;
     scalable_ccd::metal::make_soa_one_list(boxes, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
+    bp.set_use_stq(use_stq);
     bp.upload(soa);
     std::vector<Pair> out;
     double cpu_ms = 0.0;
@@ -229,12 +248,17 @@ TEST_CASE("Metal SAP 对拍：单列表共享顶点过滤", "[broad_phase][metal
         t.stop();
         cpu_ms = t.getElapsedTimeInMilliSec();
         gpu_ms = bp.last_gpu_ms();
-        std::cout << "[Metal-SAP] SingleList-SharedVertexFiltered MS=" << cpu_ms << std::endl;
-        std::cout << "[Metal-GPU-MS] SingleList-SharedVertexFiltered MS=" << gpu_ms << std::endl;
+        std::cout << tag_prefix(use_stq)
+                  << " SingleList-SharedVertexFiltered MS=" << cpu_ms
+                  << std::endl;
+        std::cout << "[Metal-GPU-MS] SingleList-SharedVertexFiltered MS="
+                  << gpu_ms << std::endl;
     }
     t_total.stop();
     const double total_ms = t_total.getElapsedTimeInMilliSec();
-    std::cout << "[Metal-SAP-E2E] SingleList-SharedVertexFiltered MS=" << total_ms << std::endl;
+    std::cout << tag_prefix(use_stq)
+              << "-E2E SingleList-SharedVertexFiltered MS=" << total_ms
+              << std::endl;
     write_json_result(
         "single_list_shared_vertex_filtered",
         "单列表：共享顶点过滤",
@@ -242,18 +266,19 @@ TEST_CASE("Metal SAP 对拍：单列表共享顶点过滤", "[broad_phase][metal
         gpu_ms,
         total_ms,
         out.size(),
-        /*passed=*/true);
+        /*passed=*/true,
+        json_prefix(use_stq));
     sort_pairs(out);
     REQUIRE(out == gt);
 }
 
-TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
+void run_two_lists_cross_only(bool use_stq)
 {
     std::vector<AABB> A, B;
-    A.push_back(make_box(0, 2, 0, 0.5, 0, 0.5, 0, 10, 20, 30)); // A0
-    A.push_back(make_box(4, 6, 0, 0.5, 0, 0.5, 1, 11, 21, 31)); // A1
-    B.push_back(make_box(1, 3, 0, 0.5, 0, 0.5, 0, 12, 22, 32)); // B0
-    B.push_back(make_box(5, 7, 0, 0.5, 0, 0.5, 1, 13, 23, 33)); // B1
+    A.push_back(make_box(0, 2, 0, 0.5, 0, 0.5, 0, 10, 20, 30));
+    A.push_back(make_box(4, 6, 0, 0.5, 0, 0.5, 1, 11, 21, 31));
+    B.push_back(make_box(1, 3, 0, 0.5, 0, 0.5, 0, 12, 22, 32));
+    B.push_back(make_box(5, 7, 0, 0.5, 0, 0.5, 1, 13, 23, 33));
 
     int sort_axis = 0;
     std::vector<Pair> gt;
@@ -265,6 +290,7 @@ TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
     scalable_ccd::metal::MetalAABBsSoA soa;
     scalable_ccd::metal::make_soa_two_lists(A, B, /*axis=*/0, soa);
     scalable_ccd::metal::BroadPhase bp;
+    bp.set_use_stq(use_stq);
     bp.upload(soa);
     std::vector<Pair> out;
     double cpu_ms = 0.0;
@@ -279,12 +305,15 @@ TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
         t.stop();
         cpu_ms = t.getElapsedTimeInMilliSec();
         gpu_ms = bp.last_gpu_ms();
-        std::cout << "[Metal-SAP] TwoLists-CrossOnly MS=" << cpu_ms << std::endl;
-        std::cout << "[Metal-GPU-MS] TwoLists-CrossOnly MS=" << gpu_ms << std::endl;
+        std::cout << tag_prefix(use_stq)
+                  << " TwoLists-CrossOnly MS=" << cpu_ms << std::endl;
+        std::cout << "[Metal-GPU-MS] TwoLists-CrossOnly MS=" << gpu_ms
+                  << std::endl;
     }
     t_total.stop();
     const double total_ms = t_total.getElapsedTimeInMilliSec();
-    std::cout << "[Metal-SAP-E2E] TwoLists-CrossOnly MS=" << total_ms << std::endl;
+    std::cout << tag_prefix(use_stq)
+              << "-E2E TwoLists-CrossOnly MS=" << total_ms << std::endl;
     write_json_result(
         "two_lists_cross_only",
         "双列表：仅跨列表配对",
@@ -292,12 +321,13 @@ TEST_CASE("Metal SAP 对拍：双列表仅跨列表", "[broad_phase][metal]")
         gpu_ms,
         total_ms,
         out.size(),
-        /*passed=*/true);
+        /*passed=*/true,
+        json_prefix(use_stq));
     sort_pairs(out);
     REQUIRE(out == gt);
 }
 
-TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ball]")
+void run_cloth_ball_case(bool use_stq)
 {
     const fs::path data(SCALABLE_CCD_DATA_DIR);
     const fs::path file_t0 =
@@ -322,7 +352,6 @@ TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ba
 
     std::vector<Pair> vf_overlaps, ee_overlaps;
 
-    // 顶点-面
     double vf_cpu_kernel_ms = 0.0;
     double vf_gpu_ms = 0.0;
     double vf_cpu_total_ms = 0.0;
@@ -334,6 +363,7 @@ TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ba
         scalable_ccd::metal::make_soa_two_lists(
             vertex_boxes, face_boxes, vf_axis, soa);
         scalable_ccd::metal::BroadPhase bp;
+        bp.set_use_stq(use_stq);
         bp.upload(soa);
 
         scalable_ccd::Timer t_kernel;
@@ -360,12 +390,14 @@ TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ba
         t_total.stop();
         vf_cpu_total_ms = t_total.getElapsedTimeInMilliSec();
 
-        std::cout << "[Metal-SAP] ClothBall-VF Host=" << vf_cpu_kernel_ms
-                  << " ms" << std::endl;
+        std::cout << tag_prefix(use_stq)
+                  << " ClothBall-VF Host=" << vf_cpu_kernel_ms << " ms"
+                  << std::endl;
         std::cout << "[Metal-GPU-MS] ClothBall-VF=" << vf_gpu_ms << " ms"
                   << std::endl;
-        std::cout << "[Metal-SAP-E2E] ClothBall-VF=" << vf_cpu_total_ms
-                  << " ms" << std::endl;
+        std::cout << tag_prefix(use_stq)
+                  << "-E2E ClothBall-VF=" << vf_cpu_total_ms << " ms"
+                  << std::endl;
 
         write_json_result(
             "cloth_ball_vf",
@@ -374,10 +406,10 @@ TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ba
             vf_gpu_ms,
             vf_cpu_total_ms,
             vf_overlaps.size(),
-            /*passed=*/true);
+            /*passed=*/true,
+            json_prefix(use_stq));
     }
 
-    // 边-边
     double ee_cpu_kernel_ms = 0.0;
     double ee_gpu_ms = 0.0;
     double ee_cpu_total_ms = 0.0;
@@ -388,6 +420,7 @@ TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ba
         const int ee_axis = auto_select_axis(edge_boxes, nullptr);
         scalable_ccd::metal::make_soa_one_list(edge_boxes, ee_axis, soa);
         scalable_ccd::metal::BroadPhase bp;
+        bp.set_use_stq(use_stq);
         bp.upload(soa);
 
         scalable_ccd::Timer t_kernel;
@@ -414,12 +447,14 @@ TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ba
         t_total.stop();
         ee_cpu_total_ms = t_total.getElapsedTimeInMilliSec();
 
-        std::cout << "[Metal-SAP] ClothBall-EE Host=" << ee_cpu_kernel_ms
-                  << " ms" << std::endl;
+        std::cout << tag_prefix(use_stq)
+                  << " ClothBall-EE Host=" << ee_cpu_kernel_ms << " ms"
+                  << std::endl;
         std::cout << "[Metal-GPU-MS] ClothBall-EE=" << ee_gpu_ms << " ms"
                   << std::endl;
-        std::cout << "[Metal-SAP-E2E] ClothBall-EE=" << ee_cpu_total_ms
-                  << " ms" << std::endl;
+        std::cout << tag_prefix(use_stq)
+                  << "-E2E ClothBall-EE=" << ee_cpu_total_ms << " ms"
+                  << std::endl;
 
         write_json_result(
             "cloth_ball_ee",
@@ -428,10 +463,10 @@ TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ba
             ee_gpu_ms,
             ee_cpu_total_ms,
             ee_overlaps.size(),
-            /*passed=*/true);
+            /*passed=*/true,
+            json_prefix(use_stq));
     }
 
-    // 与 Mathematica 真值对比（对齐 CUDA 偏移逻辑）
     int offset = static_cast<int>(vertex_boxes.size());
     for (auto& [a, b] : ee_overlaps) {
         a += offset;
@@ -439,11 +474,37 @@ TEST_CASE("Metal SAP 对拍：Cloth-Ball 实测", "[broad_phase][metal][cloth-ba
     }
     offset += static_cast<int>(edge_boxes.size());
     for (auto& [v, f] : vf_overlaps) {
-        f += offset; // faces 偏移
+        f += offset;
     }
 
     scalable_ccd::compare_mathematica(vf_overlaps, vf_gt);
     scalable_ccd::compare_mathematica(ee_overlaps, ee_gt);
+}
+
+} // namespace
+
+TEST_CASE("Metal 宽阶段：单列表链式重叠（SAP/STQ）", "[broad_phase][metal]")
+{
+    run_single_list_chain(false);
+    run_single_list_chain(true);
+}
+
+TEST_CASE("Metal 宽阶段：单列表共享顶点过滤（SAP/STQ）", "[broad_phase][metal]")
+{
+    run_single_list_shared_vertex(false);
+    run_single_list_shared_vertex(true);
+}
+
+TEST_CASE("Metal 宽阶段：双列表仅跨列表（SAP/STQ）", "[broad_phase][metal]")
+{
+    run_two_lists_cross_only(false);
+    run_two_lists_cross_only(true);
+}
+
+TEST_CASE("Metal 宽阶段：Cloth-Ball 实测（SAP/STQ）", "[broad_phase][metal][cloth-ball]")
+{
+    run_cloth_ball_case(false);
+    run_cloth_ball_case(true);
 }
 #else
 TEST_CASE("Metal backend unavailable - skipped", "[broad_phase][metal][skip]")
