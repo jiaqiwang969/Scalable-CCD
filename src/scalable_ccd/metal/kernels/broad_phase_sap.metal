@@ -124,8 +124,8 @@ kernel void sweep_and_prune_two_lists(
     }
 }
 
-// Larger queue helps deep chains in dense scenes; adjust here if needed.
-constant uint QUEUE_SIZE = 256;
+// 对齐 CUDA STQ：单 warp=32 线程、环形队列 64。
+constant uint QUEUE_SIZE = 64;
 
 inline bool queue_push(
     threadgroup atomic_uint& start,

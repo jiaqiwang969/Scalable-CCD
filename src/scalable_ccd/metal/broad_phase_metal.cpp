@@ -3,6 +3,7 @@
 #include "broad_phase_metal.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 
@@ -29,6 +30,21 @@
 
 namespace scalable_ccd {
 namespace metal {
+
+namespace {
+
+inline uint32_t get_env_u32(const char* name, uint32_t fallback)
+{
+    if (const char* v = std::getenv(name)) {
+        int parsed = std::atoi(v);
+        if (parsed > 0) {
+            return static_cast<uint32_t>(parsed);
+        }
+    }
+    return fallback;
+}
+
+} // namespace
 
 // ---------------- CPU 侧：从 AABB 生成 SoA ----------------
 
@@ -275,9 +291,22 @@ std::vector<std::pair<int, int>> BroadPhase::detect_overlaps_partial(
         cmd->waitUntilCompleted();
         return {};
     }
+    const bool stq = use_stq_;
+    uint32_t tg_limit = stq ? 32u : 64u;
+    tg_limit = get_env_u32(
+        stq ? "SCALABLE_CCD_METAL_STQ_TG" : "SCALABLE_CCD_METAL_SAP_TG",
+        tg_limit);
     const NS::UInteger w = pso->threadExecutionWidth();
+    NS::UInteger tg_w = tg_limit;
+    if (w > 0) {
+        tg_w = std::min<NS::UInteger>(w, tg_limit);
+    }
+    if (tg_w == 0) {
+        tg_w = tg_limit;
+    }
+    tg_w = std::max<NS::UInteger>(1, tg_w);
     MTL::Size grid(nthreads, 1, 1);
-    MTL::Size tg(std::min<NS::UInteger>(w ? w : 64, 64), 1, 1);
+    MTL::Size tg(tg_w, 1, 1);
     enc->dispatchThreads(grid, tg);
     enc->endEncoding();
     cmd->commit();
