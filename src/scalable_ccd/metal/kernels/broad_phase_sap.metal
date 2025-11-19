@@ -124,7 +124,8 @@ kernel void sweep_and_prune_two_lists(
     }
 }
 
-constant uint QUEUE_SIZE = 128;
+// Larger queue helps deep chains in dense scenes; adjust here if needed.
+constant uint QUEUE_SIZE = 256;
 
 inline bool queue_push(
     threadgroup atomic_uint& start,

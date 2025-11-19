@@ -2,11 +2,11 @@
   "backend": "metal_sap",
   "case_name": "单列表：链式重叠",
   "category": "broad_phase_sap",
-  "cpu_ms": 3.032583,
-  "cpu_total_ms": 27.070209,
-  "gpu_ms": 0.014624965842813253,
+  "cpu_ms": 2.925167,
+  "cpu_total_ms": 27.111375,
+  "gpu_ms": 0.014833349268883467,
   "overlaps_count": 3,
   "passed": true,
   "slug": "single_list_chain",
-  "timestamp": 1763520458
+  "timestamp": 1763522014
 }

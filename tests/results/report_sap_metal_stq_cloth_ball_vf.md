@@ -2,15 +2,15 @@
 
 - 用例标识: `cloth_ball_vf`
 - 类别: `broad_phase_sap`
-- 结果生成时间: 2025-11-19 10:48:06
+- 结果生成时间: 2025-11-19 11:13:48
 
 ## 计时对比
 - CUDA Host(ms): 46.942
-- Metal Host(ms): 74.936  (相对CUDA: 59.64%)
+- Metal Host(ms): 76.464  (相对CUDA: 62.89%)
 - CUDA E2E Host(ms): 258.146
-- Metal E2E Host(ms): 168.674  (相对CUDA: -34.66%)
+- Metal E2E Host(ms): 170.736  (相对CUDA: -33.86%)
 - CUDA GPU(ms): 46.940
-- Metal GPU(ms): 73.652  (相对CUDA: 56.91%)
+- Metal GPU(ms): 75.200  (相对CUDA: 60.21%)
 
 ## 重叠数量对比
 - CUDA overlaps: 1655541
@@ -26,4 +26,4 @@
 
 ## 元信息
 - CUDA 时间戳: 2025-11-18 19:04:47
-- Metal 时间戳: 2025-11-19 10:47:41
+- Metal 时间戳: 2025-11-19 11:13:38

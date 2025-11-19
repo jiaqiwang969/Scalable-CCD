@@ -282,9 +282,15 @@ static MetalStageResult run_metal_stage(
     bp.set_use_stq(use_stq);
     bp.upload(soa);
     uint32_t cutoff = static_cast<uint32_t>(soa.size());
+    // STQ 分批以减少单次 kernel 压力，可由环境变量覆盖
+    uint32_t stq_cutoff_env = 0;
+    if (const char* v = std::getenv("SCALABLE_CCD_METAL_STQ_CUTOFF")) {
+        stq_cutoff_env = static_cast<uint32_t>(std::max(1, std::atoi(v)));
+    }
     if (use_stq) {
-        const uint32_t STQ_MAX_CUTOFF = 8192;
-        cutoff = std::max<uint32_t>(1u, std::min<uint32_t>(cutoff, STQ_MAX_CUTOFF));
+        const uint32_t default_cutoff = two_lists ? 4096u : 8192u;
+        const uint32_t cap = stq_cutoff_env > 0 ? stq_cutoff_env : default_cutoff;
+        cutoff = std::max<uint32_t>(1u, std::min<uint32_t>(cutoff, cap));
     }
     res.cutoff = cutoff;
     res.capacity = estimate_capacity(truth_size, soa.size());
