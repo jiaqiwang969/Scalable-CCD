@@ -281,7 +281,12 @@ static MetalStageResult run_metal_stage(
     scalable_ccd::metal::BroadPhase bp;
     bp.set_use_stq(use_stq);
     bp.upload(soa);
-    res.cutoff = static_cast<uint32_t>(soa.size());
+    uint32_t cutoff = static_cast<uint32_t>(soa.size());
+    if (use_stq) {
+        const uint32_t STQ_MAX_CUTOFF = 8192;
+        cutoff = std::max<uint32_t>(1u, std::min<uint32_t>(cutoff, STQ_MAX_CUTOFF));
+    }
+    res.cutoff = cutoff;
     res.capacity = estimate_capacity(truth_size, soa.size());
 
     for (int w = 0; w < warmup; ++w) {

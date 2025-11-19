@@ -2,13 +2,13 @@
 
 - 用例标识: `single_list_chain`
 - 类别: `broad_phase_sap`
-- 结果生成时间: 2025-11-19 09:53:08
+- 结果生成时间: 2025-11-19 10:48:06
 
 ## 计时对比
 - CUDA Host(ms): 11.170
-- Metal Host(ms): 3.904  (相对CUDA: -65.05%)
+- Metal Host(ms): 3.033  (相对CUDA: -72.85%)
 - CUDA E2E Host(ms): 2310.286
-- Metal E2E Host(ms): 29.468  (相对CUDA: -98.72%)
+- Metal E2E Host(ms): 27.070  (相对CUDA: -98.83%)
 - CUDA GPU(ms): 11.167
 - Metal GPU(ms): 0.015  (相对CUDA: -99.87%)
 
@@ -26,4 +26,4 @@
 
 ## 元信息
 - CUDA 时间戳: 2025-11-18 19:04:46
-- Metal 时间戳: 2025-11-19 01:11:58
+- Metal 时间戳: 2025-11-19 10:47:38

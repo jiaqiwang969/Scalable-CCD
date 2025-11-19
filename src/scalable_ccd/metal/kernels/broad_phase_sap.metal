@@ -124,7 +124,7 @@ kernel void sweep_and_prune_two_lists(
     }
 }
 
-constant uint QUEUE_SIZE = 64;
+constant uint QUEUE_SIZE = 128;
 
 inline bool queue_push(
     threadgroup atomic_uint& start,

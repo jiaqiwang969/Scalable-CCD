@@ -2,15 +2,15 @@
 
 - 用例标识: `two_lists_cross_only`
 - 类别: `broad_phase_sap`
-- 结果生成时间: 2025-11-19 09:53:08
+- 结果生成时间: 2025-11-19 10:48:06
 
 ## 计时对比
 - CUDA Host(ms): 11.530
-- Metal Host(ms): 3.013  (相对CUDA: -73.87%)
+- Metal Host(ms): 3.544  (相对CUDA: -69.26%)
 - CUDA E2E Host(ms): 222.333
-- Metal E2E Host(ms): 4.535  (相对CUDA: -97.96%)
+- Metal E2E Host(ms): 4.074  (相对CUDA: -98.17%)
 - CUDA GPU(ms): 11.526
-- Metal GPU(ms): 0.023  (相对CUDA: -99.80%)
+- Metal GPU(ms): 0.019  (相对CUDA: -99.84%)
 
 ## 重叠数量对比
 - CUDA overlaps: 2
@@ -26,4 +26,4 @@
 
 ## 元信息
 - CUDA 时间戳: 2025-11-18 19:04:47
-- Metal 时间戳: 2025-11-19 01:11:59
+- Metal 时间戳: 2025-11-19 10:47:38

@@ -2,11 +2,11 @@
   "backend": "metal_stq",
   "case_name": "Cloth-Ball：边-边",
   "category": "broad_phase_stq",
-  "cpu_ms": 69.36375,
-  "cpu_total_ms": 139.508583,
-  "gpu_ms": 65.60287502361462,
+  "cpu_ms": 65.458042,
+  "cpu_total_ms": 135.627042,
+  "gpu_ms": 61.880749999545515,
   "overlaps_count": 5197332,
   "passed": true,
   "slug": "cloth_ball_ee",
-  "timestamp": 1763519876
+  "timestamp": 1763520461
 }
