@@ -356,6 +356,9 @@ int main(int argc, char** argv)
             max_per_scene = std::atoi(argv[++i]);
         } else if (arg == "--min-step" && i + 1 < argc) {
             min_step = std::atoi(argv[++i]);
+        } else if (arg == "--metal-stq") {
+            metal_use_stq = true;
+            metal_mode = "stq";
         } else if (arg == "--scenes" && i + 1 < argc) {
             // 逗号分隔的场景过滤
             std::string list = argv[++i];

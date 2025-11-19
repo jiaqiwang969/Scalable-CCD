@@ -2,11 +2,11 @@
   "backend": "metal_stq",
   "case_name": "双列表：仅跨列表配对",
   "category": "broad_phase_stq",
-  "cpu_ms": 3.013125,
-  "cpu_total_ms": 4.535209,
-  "gpu_ms": 0.023166649043560028,
+  "cpu_ms": 3.216708,
+  "cpu_total_ms": 3.743042,
+  "gpu_ms": 0.020499981474131346,
   "overlaps_count": 2,
   "passed": true,
   "slug": "two_lists_cross_only",
-  "timestamp": 1763485919
+  "timestamp": 1763519872
 }
