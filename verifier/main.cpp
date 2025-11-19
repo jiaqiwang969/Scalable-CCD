@@ -22,23 +22,15 @@
 #include <scalable_ccd/cuda/memory_handler.hpp>
 #endif
 #ifdef SCALABLE_CCD_WITH_METAL
-#include <scalable_ccd/metal/broad_phase/broad_phase.hpp>
-#include <scalable_ccd/metal/broad_phase/aabb.hpp>
-#endif
-#ifdef SCALABLE_CCD_WITH_METAL2
-#include <scalable_ccd/metal2/broad_phase/broad_phase.hpp>
-#include <scalable_ccd/metal2/broad_phase/aabb.hpp>
-#endif
-#ifdef SCALABLE_CCD_WITH_METALCPP
-#include <scalable_ccd/metalcpp/broad_phase/broad_phase.hpp>
-#include <scalable_ccd/metalcpp/broad_phase/aabb.hpp>
+#include <scalable_ccd/metal/broad_phase_metal.hpp>
 #endif
 
 #include <nlohmann/json.hpp>
 #include <spdlog/spdlog.h>
 
 #include <filesystem>
-#include <iostream>
+#include <limits>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -47,6 +39,7 @@
 
 namespace fs = std::filesystem;
 using nlohmann::json;
+using Pair = std::pair<int, int>;
 
 struct SceneCase {
     std::string scene;
@@ -92,9 +85,9 @@ static bool load_scenarios_json(const fs::path& path, std::vector<SceneCase>& ou
 
 static void usage(const char* argv0)
 {
-    std::cout << "用法: " << argv0 << " [--backend cpu|cuda|both|metal|metal2|metalcpp] [--out DIR] [--log N] [--threads N]\n";
+    std::cout << "用法: " << argv0 << " [--backend cpu|cuda|both|metal] [--out DIR] [--log N] [--threads N]\n";
     std::cout << "                 [--repeat N] [--warmup N] [--scenarios FILE] [--scan]\n";
-    std::cout << "                 [--max-per-scene N] [--tag NAME] [--data DIR]\n";
+    std::cout << "                 [--max-per-scene N] [--tag NAME] [--data DIR] [--metal-stq]\n";
     std::cout << "说明: 读取 SCALABLE_CCD_DATA_DIR 下的样例场景，生成验证报告。\n";
 }
 
@@ -181,6 +174,141 @@ static std::vector<SceneCase> scan_scenarios_from_dataset(const fs::path& data, 
     return out;
 }
 
+static int auto_select_axis(
+    const std::vector<AABB>& boxesA,
+    const std::vector<AABB>* boxesB = nullptr)
+{
+    double sum[3] = { 0.0, 0.0, 0.0 };
+    double sumsq[3] = { 0.0, 0.0, 0.0 };
+    size_t total = 0;
+    auto accumulate = [&](const std::vector<AABB>& boxes) {
+        for (const auto& box : boxes) {
+            const auto center = (box.min + box.max) / 2.0;
+            for (int i = 0; i < 3; ++i) {
+                const double c = center[i];
+                sum[i] += c;
+                sumsq[i] += c * c;
+            }
+            ++total;
+        }
+    };
+    accumulate(boxesA);
+    if (boxesB) accumulate(*boxesB);
+    if (total == 0) {
+        return 0;
+    }
+    int axis = 0;
+    double best_var = -1.0;
+    for (int i = 0; i < 3; ++i) {
+        const double mean = sum[i] / total;
+        const double var = sumsq[i] / total - mean * mean;
+        if (var > best_var) {
+            best_var = var;
+            axis = i;
+        }
+    }
+    return axis;
+}
+
+static size_t load_truth_size(const fs::path& path)
+{
+    std::ifstream in(path);
+    if (!in.good()) return 0;
+    const json j = json::parse(in, nullptr, true, true);
+    return j.size();
+}
+
+static uint32_t estimate_capacity(size_t truth_size, size_t soa_size)
+{
+    size_t base = truth_size > 0 ? truth_size + truth_size / 10 + 4096 : soa_size * 4 + 4096;
+    if (base > static_cast<size_t>(std::numeric_limits<uint32_t>::max())) {
+        base = static_cast<size_t>(std::numeric_limits<uint32_t>::max());
+    }
+    return static_cast<uint32_t>(base);
+}
+
+static double average_all(const std::vector<double>& v)
+{
+    if (v.empty()) return 0.0;
+    double s = 0.0;
+    for (double x : v) s += x;
+    return s / static_cast<double>(v.size());
+}
+
+static double average_nonnegative(const std::vector<double>& v)
+{
+    double s = 0.0;
+    int c = 0;
+    for (double x : v) {
+        if (x >= 0.0) {
+            s += x;
+            ++c;
+        }
+    }
+    return c > 0 ? s / static_cast<double>(c) : -1.0;
+}
+
+struct MetalStageResult {
+    std::vector<Pair> overlaps;
+    double avg_host_ms = 0.0;
+    double avg_gpu_ms = -1.0;
+    double e2e_ms = 0.0;
+    int sort_axis = 0;
+    uint32_t cutoff = 0;
+    uint32_t capacity = 0;
+};
+
+#ifdef SCALABLE_CCD_WITH_METAL
+static MetalStageResult run_metal_stage(
+    const std::vector<AABB>& boxesA,
+    const std::vector<AABB>* boxesB,
+    bool two_lists,
+    bool use_stq,
+    int warmup,
+    int repeat,
+    size_t truth_size)
+{
+    MetalStageResult res{};
+    res.sort_axis = auto_select_axis(boxesA, boxesB);
+    scalable_ccd::metal::MetalAABBsSoA soa;
+    if (two_lists) {
+        if (!boxesB) throw std::runtime_error("Two-list stage requires secondary boxes");
+        scalable_ccd::metal::make_soa_two_lists(boxesA, *boxesB, res.sort_axis, soa);
+    } else {
+        scalable_ccd::metal::make_soa_one_list(boxesA, res.sort_axis, soa);
+    }
+
+    scalable_ccd::metal::BroadPhase bp;
+    bp.set_use_stq(use_stq);
+    bp.upload(soa);
+    res.cutoff = static_cast<uint32_t>(soa.size());
+    res.capacity = estimate_capacity(truth_size, soa.size());
+
+    for (int w = 0; w < warmup; ++w) {
+        (void)bp.detect_overlaps(two_lists, res.cutoff, res.capacity);
+    }
+
+    std::vector<double> host_times;
+    std::vector<double> gpu_times;
+    host_times.reserve(std::max(1, repeat));
+    gpu_times.reserve(std::max(1, repeat));
+    scalable_ccd::Timer total;
+    total.start();
+    for (int r = 0; r < repeat; ++r) {
+        scalable_ccd::Timer ht;
+        ht.start();
+        res.overlaps = bp.detect_overlaps(two_lists, res.cutoff, res.capacity);
+        ht.stop();
+        host_times.push_back(ht.getElapsedTimeInMilliSec());
+        gpu_times.push_back(bp.last_gpu_ms());
+    }
+    total.stop();
+    res.avg_host_ms = average_all(host_times);
+    res.avg_gpu_ms = average_nonnegative(gpu_times);
+    res.e2e_ms = total.getElapsedTimeInMilliSec();
+    return res;
+}
+#endif
 int main(int argc, char** argv)
 {
     std::string backend = "both";
@@ -192,6 +320,8 @@ int main(int argc, char** argv)
     std::string scenarios_path;
     std::string env_tag;
     std::string data_dir_cli;
+    bool metal_use_stq = false;
+    std::string metal_mode = "sap";
     bool do_scan = false;
     int max_per_scene = -1;
     int min_step = -1;
@@ -241,6 +371,9 @@ int main(int argc, char** argv)
             env_tag = argv[++i];
         } else if (arg == "--data" && i + 1 < argc) {
             data_dir_cli = argv[++i];
+        } else if (arg == "--metal-stq") {
+            metal_use_stq = true;
+            metal_mode = "stq";
         } else if (arg == "--queries") {
             run_queries = true;
         } else if (arg == "--max-queries" && i + 1 < argc) {
@@ -546,10 +679,10 @@ int main(int argc, char** argv)
         (void)backend;
 #endif
 
-        // ---------------- Metal Broad Phase ----------------
+                // ---------------- Metal Broad Phase ----------------
         if (backend == "metal") {
 #ifdef SCALABLE_CCD_WITH_METAL
-            std::vector<scalable_ccd::AABB> vboxes, eboxes, fboxes;
+            std::vector<AABB> vboxes, eboxes, fboxes;
             double build_boxes_ms = 0.0;
             {
                 scalable_ccd::Timer t;
@@ -558,109 +691,65 @@ int main(int argc, char** argv)
                 t.stop();
                 build_boxes_ms = t.getElapsedTimeInMilliSec();
                 spdlog::info("[METAL] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
-                             s.scene, build_boxes_ms, vboxes.size(), eboxes.size(), fboxes.size());
+                    s.scene, build_boxes_ms, vboxes.size(), eboxes.size(), fboxes.size());
             }
-            // VF
+
+            const size_t vf_truth = load_truth_size(vf_gt);
+            const size_t ee_truth = load_truth_size(ee_gt);
+
             {
-                scalable_ccd::metal::BroadPhase bp;
-                auto dV = std::make_shared<scalable_ccd::metal::DeviceAABBs>(vboxes);
-                auto dF = std::make_shared<scalable_ccd::metal::DeviceAABBs>(fboxes);
-                // warmup
-                for (int w = 0; w < warmup; ++w) {
-                    bp.clear();
-                    bp.build(dV, dF);
-                    (void)bp.detect_overlaps();
-                }
-                // repeats
-                std::vector<double> times;
-                times.reserve(repeat);
-                std::vector<std::pair<int,int>> vf_overlaps;
-                int sort_axis = 0; // for compatibility with report schema
-                for (int r = 0; r < repeat; ++r) {
-                    bp.clear();
-                    bp.build(dV, dF);
-                    scalable_ccd::Timer t; t.start();
-                    vf_overlaps = bp.detect_overlaps();
-                    t.stop();
-                    times.push_back(t.getElapsedTimeInMilliSec());
-                }
-                double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
-                avg_ms /= std::max(1, (int)times.size());
-                // Offset to match ground-truth encoding (see tests)
-                {
-                    int offset = static_cast<int>(vboxes.size() + eboxes.size());
-                    for (auto& p : vf_overlaps) {
-                        p.second += offset;
-                    }
+                auto vf_res = run_metal_stage(vboxes, &fboxes, true, metal_use_stq, warmup, repeat, vf_truth);
+                int offset = static_cast<int>(vboxes.size() + eboxes.size());
+                for (auto& p : vf_res.overlaps) {
+                    p.second += offset;
                 }
                 json run;
                 run["scene"] = s.scene;
                 run["t0"] = file_t0.filename().string();
                 run["t1"] = file_t1.filename().string();
-                run["backend"] = "metal";
+                run["backend"] = metal_use_stq ? "metal_stq" : "metal";
                 run["steps"] = {
                     {"stage","broad_vf"},
-                    {"avg_ms", avg_ms},
+                    {"avg_ms", vf_res.avg_host_ms},
+                    {"gpu_ms", vf_res.avg_gpu_ms},
+                    {"e2e_ms", vf_res.e2e_ms},
                     {"repeats", repeat},
                     {"warmup", warmup},
                     {"build_boxes_ms", build_boxes_ms},
-                    {"sort_axis_end", sort_axis}
+                    {"sort_axis_end", vf_res.sort_axis},
+                    {"mode", metal_mode}
                 };
                 run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
+                auto cmp = verifier::compare_overlaps_with_truth(vf_res.overlaps, {}, vf_gt);
                 run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
                 aggregate["runs"].push_back(run);
             }
-            // EE
+
             {
-                scalable_ccd::metal::BroadPhase bp;
-                auto dE = std::make_shared<scalable_ccd::metal::DeviceAABBs>(eboxes);
-                // warmup
-                for (int w = 0; w < warmup; ++w) {
-                    bp.clear();
-                    bp.build(dE);
-                    (void)bp.detect_overlaps();
-                }
-                // repeats
-                std::vector<double> times;
-                times.reserve(repeat);
-                std::vector<std::pair<int,int>> ee_overlaps;
-                int sort_axis_ee = 0; // 与报告一致
-                for (int r = 0; r < repeat; ++r) {
-                    bp.clear();
-                    bp.build(dE);
-                    scalable_ccd::Timer t; t.start();
-                    ee_overlaps = bp.detect_overlaps();
-                    t.stop();
-                    times.push_back(t.getElapsedTimeInMilliSec());
-                }
-                double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
-                avg_ms /= std::max(1, (int)times.size());
-                // Offset to match ground-truth encoding (see tests)
-                {
-                    int offset = static_cast<int>(vboxes.size());
-                    for (auto& p : ee_overlaps) {
-                        p.first += offset;
-                        p.second += offset;
-                    }
+                auto ee_res = run_metal_stage(eboxes, nullptr, false, metal_use_stq, warmup, repeat, ee_truth);
+                int offset = static_cast<int>(vboxes.size());
+                for (auto& p : ee_res.overlaps) {
+                    p.first += offset;
+                    p.second += offset;
                 }
                 json run;
                 run["scene"] = s.scene;
                 run["t0"] = file_t0.filename().string();
                 run["t1"] = file_t1.filename().string();
-                run["backend"] = "metal";
+                run["backend"] = metal_use_stq ? "metal_stq" : "metal";
                 run["steps"] = {
                     {"stage","broad_ee"},
-                    {"avg_ms", avg_ms},
+                    {"avg_ms", ee_res.avg_host_ms},
+                    {"gpu_ms", ee_res.avg_gpu_ms},
+                    {"e2e_ms", ee_res.e2e_ms},
                     {"repeats", repeat},
                     {"warmup", warmup},
                     {"build_boxes_ms", build_boxes_ms},
-                    {"sort_axis_end", sort_axis_ee}
+                    {"sort_axis_end", ee_res.sort_axis},
+                    {"mode", metal_mode}
                 };
                 run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
+                auto cmp = verifier::compare_overlaps_with_truth(ee_res.overlaps, {}, ee_gt);
                 run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
                 aggregate["runs"].push_back(run);
             }
@@ -669,263 +758,7 @@ int main(int argc, char** argv)
 #endif
         }
 
-        // ---------------- Metal2 Broad Phase (strict correctness by default) ----------------
-        if (backend == "metal2") {
-#ifdef SCALABLE_CCD_WITH_METAL2
-            std::vector<scalable_ccd::AABB> vboxes, eboxes, fboxes;
-            double build_boxes_ms = 0.0;
-            {
-                scalable_ccd::Timer t;
-                t.start();
-                verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
-                t.stop();
-                build_boxes_ms = t.getElapsedTimeInMilliSec();
-                spdlog::info("[METAL2] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
-                             s.scene, build_boxes_ms, vboxes.size(), eboxes.size(), fboxes.size());
-            }
-            // VF
-            {
-                scalable_ccd::metal2::BroadPhase bp;
-                auto dV = std::make_shared<scalable_ccd::metal2::DeviceAABBs>(vboxes);
-                auto dF = std::make_shared<scalable_ccd::metal2::DeviceAABBs>(fboxes);
-                // warmup
-                for (int w = 0; w < warmup; ++w) {
-                    bp.clear();
-                    bp.build(dV, dF);
-                    (void)bp.detect_overlaps();
-                }
-                // repeats
-                std::vector<double> times;
-                times.reserve(repeat);
-                std::vector<std::pair<int,int>> vf_overlaps;
-                int sort_axis = 0; // for schema
-                for (int r = 0; r < repeat; ++r) {
-                    bp.clear();
-                    bp.build(dV, dF);
-                    scalable_ccd::Timer t; t.start();
-                    vf_overlaps = bp.detect_overlaps();
-                    t.stop();
-                    times.push_back(t.getElapsedTimeInMilliSec());
-                }
-                auto timing = bp.last_timing();
-                double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
-                avg_ms /= std::max(1, (int)times.size());
-                // Offset like tests
-                {
-                    int offset = static_cast<int>(vboxes.size() + eboxes.size());
-                    for (auto& p : vf_overlaps) {
-                        p.second += offset;
-                    }
-                }
-                json run;
-                run["scene"] = s.scene;
-                run["t0"] = file_t0.filename().string();
-                run["t1"] = file_t1.filename().string();
-                run["backend"] = "metal2";
-                run["steps"] = {
-                    {"stage","broad_vf"},
-                    {"avg_ms", avg_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"build_boxes_ms", build_boxes_ms},
-                    {"sort_axis_end", sort_axis}
-                };
-                // Metal2 细分计时（可选）
-                if (timing.total_ms >= 0.0) {
-                    run["steps"]["axis_merge_ms"] = timing.axis_merge_ms;
-                    run["steps"]["pairs_ms"] = timing.pairs_ms;
-                    run["steps"]["pairs_src"] = timing.pairs_src;
-                    run["steps"]["filter_ms"] = timing.filter_ms;
-                    run["steps"]["filter_src"] = timing.filter_src;
-                    run["steps"]["compose_ms"] = timing.compose_ms;
-                    run["steps"]["total_ms_m2"] = timing.total_ms;
-                }
-                run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
-                aggregate["runs"].push_back(run);
-            }
-            // EE
-            {
-                scalable_ccd::metal2::BroadPhase bp;
-                auto dE = std::make_shared<scalable_ccd::metal2::DeviceAABBs>(eboxes);
-                // warmup
-                for (int w = 0; w < warmup; ++w) {
-                    bp.clear();
-                    bp.build(dE);
-                    (void)bp.detect_overlaps();
-                }
-                // repeats
-                std::vector<double> times;
-                times.reserve(repeat);
-                std::vector<std::pair<int,int>> ee_overlaps;
-                int sort_axis_ee = 0;
-                for (int r = 0; r < repeat; ++r) {
-                    bp.clear();
-                    bp.build(dE);
-                    scalable_ccd::Timer t; t.start();
-                    ee_overlaps = bp.detect_overlaps();
-                    t.stop();
-                    times.push_back(t.getElapsedTimeInMilliSec());
-                }
-                auto timing_ee = bp.last_timing();
-                double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
-                avg_ms /= std::max(1, (int)times.size());
-                // Offset like tests
-                {
-                    int offset = static_cast<int>(vboxes.size());
-                    for (auto& p : ee_overlaps) {
-                        p.first += offset;
-                        p.second += offset;
-                    }
-                }
-                json run;
-                run["scene"] = s.scene;
-                run["t0"] = file_t0.filename().string();
-                run["t1"] = file_t1.filename().string();
-                run["backend"] = "metal2";
-                run["steps"] = {
-                    {"stage","broad_ee"},
-                    {"avg_ms", avg_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"build_boxes_ms", build_boxes_ms},
-                    {"sort_axis_end", sort_axis_ee}
-                };
-                if (timing_ee.total_ms >= 0.0) {
-                    run["steps"]["axis_merge_ms"] = timing_ee.axis_merge_ms;
-                    run["steps"]["pairs_ms"] = timing_ee.pairs_ms;
-                    run["steps"]["pairs_src"] = timing_ee.pairs_src;
-                    run["steps"]["filter_ms"] = timing_ee.filter_ms;
-                    run["steps"]["filter_src"] = timing_ee.filter_src;
-                    run["steps"]["compose_ms"] = timing_ee.compose_ms;
-                    run["steps"]["total_ms_m2"] = timing_ee.total_ms;
-                }
-                run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
-                aggregate["runs"].push_back(run);
-            }
-#else
-            spdlog::warn("Metal2 后端未编译（缺少 SCALABLE_CCD_WITH_METAL2 或非 Apple 平台），跳过 Metal2 验证。");
-#endif
-        }
-
-        // ---------------- Metal-cpp Broad Phase (strict correctness by default) ----------------
-        if (backend == "metalcpp") {
-#ifdef SCALABLE_CCD_WITH_METALCPP
-            std::vector<scalable_ccd::AABB> vboxes, eboxes, fboxes;
-            double build_boxes_ms = 0.0;
-            {
-                scalable_ccd::Timer t;
-                t.start();
-                verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
-                t.stop();
-                build_boxes_ms = t.getElapsedTimeInMilliSec();
-                spdlog::info("[METALCPP] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
-                             s.scene, build_boxes_ms, vboxes.size(), eboxes.size(), fboxes.size());
-            }
-            // VF
-            {
-                scalable_ccd::metalcpp::BroadPhase bp;
-                auto dV = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(vboxes);
-                auto dF = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(fboxes);
-                for (int w = 0; w < warmup; ++w) {
-                    bp.clear();
-                    bp.build(dV, dF);
-                    (void)bp.detect_overlaps();
-                }
-                std::vector<double> times;
-                times.reserve(repeat);
-                std::vector<std::pair<int,int>> vf_overlaps;
-                for (int r = 0; r < repeat; ++r) {
-                    bp.clear();
-                    bp.build(dV, dF);
-                    scalable_ccd::Timer t; t.start();
-                    vf_overlaps = bp.detect_overlaps();
-                    t.stop();
-                    times.push_back(t.getElapsedTimeInMilliSec());
-                }
-                double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
-                avg_ms /= std::max(1, (int)times.size());
-                {
-                    int offset = static_cast<int>(vboxes.size() + eboxes.size());
-                    for (auto& p : vf_overlaps) {
-                        p.second += offset;
-                    }
-                }
-                json run;
-                run["scene"] = s.scene;
-                run["t0"] = file_t0.filename().string();
-                run["t1"] = file_t1.filename().string();
-                run["backend"] = "metalcpp";
-                run["steps"] = {
-                    {"stage","broad_vf"},
-                    {"avg_ms", avg_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"build_boxes_ms", build_boxes_ms}
-                };
-                run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
-                aggregate["runs"].push_back(run);
-            }
-            // EE
-            {
-                scalable_ccd::metalcpp::BroadPhase bp;
-                auto dE = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(eboxes);
-                for (int w = 0; w < warmup; ++w) {
-                    bp.clear();
-                    bp.build(dE);
-                    (void)bp.detect_overlaps();
-                }
-                std::vector<double> times;
-                times.reserve(repeat);
-                std::vector<std::pair<int,int>> ee_overlaps;
-                for (int r = 0; r < repeat; ++r) {
-                    bp.clear();
-                    bp.build(dE);
-                    scalable_ccd::Timer t; t.start();
-                    ee_overlaps = bp.detect_overlaps();
-                    t.stop();
-                    times.push_back(t.getElapsedTimeInMilliSec());
-                }
-                double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
-                avg_ms /= std::max(1, (int)times.size());
-                {
-                    int offset = static_cast<int>(vboxes.size());
-                    for (auto& p : ee_overlaps) {
-                        p.first += offset;
-                        p.second += offset;
-                    }
-                }
-                json run;
-                run["scene"] = s.scene;
-                run["t0"] = file_t0.filename().string();
-                run["t1"] = file_t1.filename().string();
-                run["backend"] = "metalcpp";
-                run["steps"] = {
-                    {"stage","broad_ee"},
-                    {"avg_ms", avg_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"build_boxes_ms", build_boxes_ms}
-                };
-                run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
-                aggregate["runs"].push_back(run);
-            }
-#else
-            spdlog::warn("Metal-cpp 后端未编译（缺少 SCALABLE_CCD_WITH_METALCPP 或非 Apple 平台），跳过 Metal-cpp 验证。");
-#endif
-        }
-        // ---------------- Per-Query Verification (optional) ----------------
+// ---------------- Per-Query Verification (optional) ----------------
         if (run_queries) {
 #ifdef SCALABLE_CCD_WITH_CUDA
             auto step_from_path = [&](const fs::path& p)->int{
