@@ -29,6 +29,12 @@ if(SCALABLE_CCD_WITH_CUDA)
   )
 endif()
 
+if(SCALABLE_CCD_WITH_METAL2)
+  target_sources(scalable_ccd_tests PRIVATE
+    test_broad_phase_metal2.cpp
+  )
+endif()
+
 # ==============================================================================
 # Required Libraries
 # ==============================================================================

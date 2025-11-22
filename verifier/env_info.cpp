@@ -1,4 +1,5 @@
-// Minimal, portable environment collection for Linux; guarded CUDA info if available.
+// Minimal, portable environment collection for Linux; guarded CUDA info if
+// available.
 
 #include "env_info.hpp"
 
@@ -16,6 +17,15 @@
 
 #ifdef SCALABLE_CCD_WITH_CUDA
 #include <cuda_runtime.h>
+#endif
+#ifdef SCALABLE_CCD_WITH_METAL
+#include <scalable_ccd/metal/runtime/runtime.hpp>
+#endif
+#ifdef SCALABLE_CCD_WITH_METAL2
+// metal2 当前仅占位，无设备查询；仅标注构建存在
+#endif
+#ifdef SCALABLE_CCD_WITH_METALCPP
+// metal-cpp 当前仅标注构建存在；设备信息在运行时 warmup 打印
 #endif
 
 namespace {
@@ -56,9 +66,13 @@ std::string get_cpu_model()
 std::string get_compiler_string()
 {
 #if defined(__clang__)
-    return std::string("Clang ") + std::to_string(__clang_major__) + "." + std::to_string(__clang_minor__) + "." + std::to_string(__clang_patchlevel__);
+    return std::string("Clang ") + std::to_string(__clang_major__) + "."
+        + std::to_string(__clang_minor__) + "."
+        + std::to_string(__clang_patchlevel__);
 #elif defined(__GNUC__)
-    return std::string("GCC ") + std::to_string(__GNUC__) + "." + std::to_string(__GNUC_MINOR__) + "." + std::to_string(__GNUC_PATCHLEVEL__);
+    return std::string("GCC ") + std::to_string(__GNUC__) + "."
+        + std::to_string(__GNUC_MINOR__) + "."
+        + std::to_string(__GNUC_PATCHLEVEL__);
 #elif defined(_MSC_VER)
     return "MSVC " + std::to_string(_MSC_VER);
 #else
@@ -90,7 +104,8 @@ nlohmann::json collect_env_info()
         while (std::getline(in, line)) {
             if (line.rfind("PRETTY_NAME=", 0) == 0) {
                 auto name = line.substr(std::strlen("PRETTY_NAME="));
-                if (!name.empty() && name.front() == '"' && name.back() == '"') {
+                if (!name.empty() && name.front() == '"'
+                    && name.back() == '"') {
                     name = name.substr(1, name.size() - 2);
                 }
                 j["os"]["distro"] = name;
@@ -105,7 +120,8 @@ nlohmann::json collect_env_info()
     long pages = sysconf(_SC_PHYS_PAGES);
     long page_size = sysconf(_SC_PAGE_SIZE);
     if (pages > 0 && page_size > 0) {
-        j["memory"]["total_bytes"] = static_cast<long long>(pages) * static_cast<long long>(page_size);
+        j["memory"]["total_bytes"] =
+            static_cast<long long>(pages) * static_cast<long long>(page_size);
     }
 
     // Build/Compile info
@@ -128,6 +144,16 @@ nlohmann::json collect_env_info()
 #else
     j["build"]["with_metal"] = false;
 #endif
+#ifdef SCALABLE_CCD_WITH_METAL2
+    j["build"]["with_metal2"] = true;
+#else
+    j["build"]["with_metal2"] = false;
+#endif
+#ifdef SCALABLE_CCD_WITH_METALCPP
+    j["build"]["with_metalcpp"] = true;
+#else
+    j["build"]["with_metalcpp"] = false;
+#endif
 
 #ifdef SCALABLE_CCD_WITH_CUDA
     // CUDA info
@@ -140,11 +166,11 @@ nlohmann::json collect_env_info()
     j["cuda"]["device_count"] = device_count;
     if (device_count > 0) {
         for (int i = 0; i < device_count; ++i) {
-            cudaDeviceProp prop{};
+            cudaDeviceProp prop {};
             cudaGetDeviceProperties(&prop, i);
             nlohmann::json d;
             d["name"] = prop.name;
-            d["sm"] = { {"major", prop.major}, {"minor", prop.minor} };
+            d["sm"] = { { "major", prop.major }, { "minor", prop.minor } };
             d["multiProcessorCount"] = prop.multiProcessorCount;
             d["totalGlobalMem"] = static_cast<long long>(prop.totalGlobalMem);
             d["sharedMemPerBlock"] = prop.sharedMemPerBlock;

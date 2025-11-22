@@ -54,20 +54,26 @@ static std::vector<SceneCase> default_scenes(const fs::path& data)
 {
     // 选择与现有单测一致的若干场景与帧
     return {
-        { "armadillo-rollers", "326.ply", "327.ply", "326vf.json", "326ee.json" },
-        { "cloth-ball", "frames/cloth_ball92.ply", "frames/cloth_ball93.ply", "boxes/92vf.json", "boxes/92ee.json" },
+        { "armadillo-rollers", "326.ply", "327.ply", "326vf.json",
+          "326ee.json" },
+        { "cloth-ball", "frames/cloth_ball92.ply", "frames/cloth_ball93.ply",
+          "boxes/92vf.json", "boxes/92ee.json" },
         { "cloth-funnel", "227.ply", "228.ply", "227vf.json", "227ee.json" },
-        { "n-body-simulation", "frames/balls16_18.ply", "frames/balls16_19.ply", "boxes/18vf.json", "boxes/18ee.json" },
+        { "n-body-simulation", "frames/balls16_18.ply", "frames/balls16_19.ply",
+          "boxes/18vf.json", "boxes/18ee.json" },
         { "rod-twist", "3036.ply", "3037.ply", "3036vf.json", "3036ee.json" },
     };
 }
 
-static bool load_scenarios_json(const fs::path& path, std::vector<SceneCase>& out)
+static bool
+load_scenarios_json(const fs::path& path, std::vector<SceneCase>& out)
 {
     std::ifstream in(path);
-    if (!in.good()) return false;
+    if (!in.good())
+        return false;
     json j = json::parse(in, nullptr, true, true);
-    if (!j.contains("scenes") || !j["scenes"].is_array()) return false;
+    if (!j.contains("scenes") || !j["scenes"].is_array())
+        return false;
     out.clear();
     for (const auto& s : j["scenes"]) {
         SceneCase sc;
@@ -76,7 +82,8 @@ static bool load_scenarios_json(const fs::path& path, std::vector<SceneCase>& ou
         sc.t1 = s.value("t1", "");
         sc.vf_json = s.value("vf_json", "");
         sc.ee_json = s.value("ee_json", "");
-        if (!sc.scene.empty() && !sc.t0.empty() && !sc.t1.empty() && !sc.vf_json.empty() && !sc.ee_json.empty()) {
+        if (!sc.scene.empty() && !sc.t0.empty() && !sc.t1.empty()
+            && !sc.vf_json.empty() && !sc.ee_json.empty()) {
             out.push_back(std::move(sc));
         }
     }
@@ -85,24 +92,34 @@ static bool load_scenarios_json(const fs::path& path, std::vector<SceneCase>& ou
 
 static void usage(const char* argv0)
 {
-    std::cout << "用法: " << argv0 << " [--backend cpu|cuda|both|metal] [--out DIR] [--log N] [--threads N]\n";
-    std::cout << "                 [--repeat N] [--warmup N] [--scenarios FILE] [--scan]\n";
-    std::cout << "                 [--max-per-scene N] [--tag NAME] [--data DIR] [--metal-stq]\n";
-    std::cout << "说明: 读取 SCALABLE_CCD_DATA_DIR 下的样例场景，生成验证报告。\n";
+    std::cout
+        << "用法: " << argv0
+        << " [--backend cpu|cuda|both|metal] [--out DIR] [--log N] [--threads N]\n";
+    std::cout
+        << "                 [--repeat N] [--warmup N] [--scenarios FILE] [--scan]\n";
+    std::cout
+        << "                 [--max-per-scene N] [--tag NAME] [--data DIR] [--metal-stq]\n";
+    std::cout
+        << "说明: 读取 SCALABLE_CCD_DATA_DIR 下的样例场景，生成验证报告。\n";
 }
 
 static bool is_numeric(char c) { return c >= '0' && c <= '9'; }
 
-// 提取帧文件名中的“末尾数字”作为时间步（如 balls16_18 -> 18, 3036 -> 3036, cloth_ball92 -> 92）
+// 提取帧文件名中的“末尾数字”作为时间步（如 balls16_18 -> 18, 3036 -> 3036,
+// cloth_ball92 -> 92）
 static bool extract_step_from_filename(const std::string& stem, int& step_out)
 {
     int i = static_cast<int>(stem.size()) - 1;
-    while (i >= 0 && !is_numeric(stem[i])) --i;
-    if (i < 0) return false;
+    while (i >= 0 && !is_numeric(stem[i]))
+        --i;
+    if (i < 0)
+        return false;
     int end = i;
-    while (i >= 0 && is_numeric(stem[i])) --i;
+    while (i >= 0 && is_numeric(stem[i]))
+        --i;
     int start = i + 1;
-    if (start > end) return false;
+    if (start > end)
+        return false;
     try {
         step_out = std::stoi(stem.substr(start, end - start + 1));
         return true;
@@ -111,49 +128,73 @@ static bool extract_step_from_filename(const std::string& stem, int& step_out)
     }
 }
 
-static std::vector<SceneCase> scan_scenarios_from_dataset(const fs::path& data, int max_per_scene, int min_step, const std::vector<std::string>& scene_filters)
+static std::vector<SceneCase> scan_scenarios_from_dataset(
+    const fs::path& data,
+    int max_per_scene,
+    int min_step,
+    const std::vector<std::string>& scene_filters)
 {
     std::vector<SceneCase> out;
-    if (!fs::exists(data) || !fs::is_directory(data)) return out;
+    if (!fs::exists(data) || !fs::is_directory(data))
+        return out;
     for (auto& scene_dir_entry : fs::directory_iterator(data)) {
-        if (!scene_dir_entry.is_directory()) continue;
+        if (!scene_dir_entry.is_directory())
+            continue;
         std::string scene = scene_dir_entry.path().filename().string();
-        if (scene == "_src" || scene == "_loose" || scene == ".git") continue;
+        if (scene == "_src" || scene == "_loose" || scene == ".git")
+            continue;
         if (!scene_filters.empty()) {
             bool match = false;
             for (const auto& sf : scene_filters) {
-                if (scene == sf) { match = true; break; }
+                if (scene == sf) {
+                    match = true;
+                    break;
+                }
             }
-            if (!match) continue;
+            if (!match)
+                continue;
         }
         fs::path scene_dir = scene_dir_entry.path();
         fs::path frames_dir = scene_dir / "frames";
         fs::path boxes_dir = scene_dir / "boxes";
-        if (!fs::exists(frames_dir) || !fs::is_directory(frames_dir)) continue;
-        if (!fs::exists(boxes_dir) || !fs::is_directory(boxes_dir)) continue;
+        if (!fs::exists(frames_dir) || !fs::is_directory(frames_dir))
+            continue;
+        if (!fs::exists(boxes_dir) || !fs::is_directory(boxes_dir))
+            continue;
         // 收集所有帧文件，按步号排序
-        struct FrameItem { int step; fs::path path; };
+        struct FrameItem {
+            int step;
+            fs::path path;
+        };
         std::vector<FrameItem> frames;
         for (auto& f : fs::directory_iterator(frames_dir)) {
-            if (!f.is_regular_file()) continue;
+            if (!f.is_regular_file())
+                continue;
             auto ext = f.path().extension().string();
-            if (ext != ".ply" && ext != ".obj") continue;
+            if (ext != ".ply" && ext != ".obj")
+                continue;
             int step;
             if (extract_step_from_filename(f.path().stem().string(), step)) {
                 frames.push_back({ step, f.path() });
             }
         }
-        std::sort(frames.begin(), frames.end(), [](const FrameItem& a, const FrameItem& b) {
-            if (a.step != b.step) return a.step < b.step;
-            return a.path.string() < b.path.string();
-        });
-        if (frames.size() < 2) continue;
+        std::sort(
+            frames.begin(), frames.end(),
+            [](const FrameItem& a, const FrameItem& b) {
+                if (a.step != b.step)
+                    return a.step < b.step;
+                return a.path.string() < b.path.string();
+            });
+        if (frames.size() < 2)
+            continue;
         int added = 0;
         for (size_t i = 0; i + 1 < frames.size(); ++i) {
             int s = frames[i].step;
             int nexts = frames[i + 1].step;
-            if (nexts != s + 1) continue; // 只匹配相邻的时间步
-            if (min_step >= 0 && s < min_step) continue;
+            if (nexts != s + 1)
+                continue; // 只匹配相邻的时间步
+            if (min_step >= 0 && s < min_step)
+                continue;
             // 推断 boxes json 名称
             fs::path vf = boxes_dir / (std::to_string(s) + "vf.json");
             fs::path ee = boxes_dir / (std::to_string(s) + "ee.json");
@@ -168,15 +209,15 @@ static std::vector<SceneCase> scan_scenarios_from_dataset(const fs::path& data, 
             sc.vf_json = fs::relative(vf, scene_dir).string();
             sc.ee_json = fs::relative(ee, scene_dir).string();
             out.push_back(std::move(sc));
-            if (max_per_scene > 0 && ++added >= max_per_scene) break;
+            if (max_per_scene > 0 && ++added >= max_per_scene)
+                break;
         }
     }
     return out;
 }
 
 static int auto_select_axis(
-    const std::vector<AABB>& boxesA,
-    const std::vector<AABB>* boxesB = nullptr)
+    const std::vector<AABB>& boxesA, const std::vector<AABB>* boxesB = nullptr)
 {
     double sum[3] = { 0.0, 0.0, 0.0 };
     double sumsq[3] = { 0.0, 0.0, 0.0 };
@@ -193,7 +234,8 @@ static int auto_select_axis(
         }
     };
     accumulate(boxesA);
-    if (boxesB) accumulate(*boxesB);
+    if (boxesB)
+        accumulate(*boxesB);
     if (total == 0) {
         return 0;
     }
@@ -213,14 +255,16 @@ static int auto_select_axis(
 static size_t load_truth_size(const fs::path& path)
 {
     std::ifstream in(path);
-    if (!in.good()) return 0;
+    if (!in.good())
+        return 0;
     const json j = json::parse(in, nullptr, true, true);
     return j.size();
 }
 
 static uint32_t estimate_capacity(size_t truth_size, size_t soa_size)
 {
-    size_t base = truth_size > 0 ? truth_size + truth_size / 10 + 4096 : soa_size * 4 + 4096;
+    size_t base = truth_size > 0 ? truth_size + truth_size / 10 + 4096
+                                 : soa_size * 4 + 4096;
     if (base > static_cast<size_t>(std::numeric_limits<uint32_t>::max())) {
         base = static_cast<size_t>(std::numeric_limits<uint32_t>::max());
     }
@@ -229,9 +273,11 @@ static uint32_t estimate_capacity(size_t truth_size, size_t soa_size)
 
 static double average_all(const std::vector<double>& v)
 {
-    if (v.empty()) return 0.0;
+    if (v.empty())
+        return 0.0;
     double s = 0.0;
-    for (double x : v) s += x;
+    for (double x : v)
+        s += x;
     return s / static_cast<double>(v.size());
 }
 
@@ -268,12 +314,14 @@ static MetalStageResult run_metal_stage(
     int repeat,
     size_t truth_size)
 {
-    MetalStageResult res{};
+    MetalStageResult res {};
     res.sort_axis = auto_select_axis(boxesA, boxesB);
     scalable_ccd::metal::MetalAABBsSoA soa;
     if (two_lists) {
-        if (!boxesB) throw std::runtime_error("Two-list stage requires secondary boxes");
-        scalable_ccd::metal::make_soa_two_lists(boxesA, *boxesB, res.sort_axis, soa);
+        if (!boxesB)
+            throw std::runtime_error("Two-list stage requires secondary boxes");
+        scalable_ccd::metal::make_soa_two_lists(
+            boxesA, *boxesB, res.sort_axis, soa);
     } else {
         scalable_ccd::metal::make_soa_one_list(boxesA, res.sort_axis, soa);
     }
@@ -289,7 +337,8 @@ static MetalStageResult run_metal_stage(
     }
     if (use_stq) {
         const uint32_t default_cutoff = two_lists ? 4096u : 8192u;
-        const uint32_t cap = stq_cutoff_env > 0 ? stq_cutoff_env : default_cutoff;
+        const uint32_t cap =
+            stq_cutoff_env > 0 ? stq_cutoff_env : default_cutoff;
         cutoff = std::max<uint32_t>(1u, std::min<uint32_t>(cutoff, cap));
     }
     res.cutoff = cutoff;
@@ -352,13 +401,16 @@ int main(int argc, char** argv)
             log_level = std::atoi(argv[++i]);
         } else if (arg == "--threads" && i + 1 < argc) {
             num_threads = std::atoi(argv[++i]);
-            if (num_threads <= 0) num_threads = tbb::info::default_concurrency();
+            if (num_threads <= 0)
+                num_threads = tbb::info::default_concurrency();
         } else if (arg == "--warmup" && i + 1 < argc) {
             warmup = std::atoi(argv[++i]);
-            if (warmup < 0) warmup = 0;
+            if (warmup < 0)
+                warmup = 0;
         } else if (arg == "--repeat" && i + 1 < argc) {
             repeat = std::atoi(argv[++i]);
-            if (repeat < 1) repeat = 1;
+            if (repeat < 1)
+                repeat = 1;
         } else if (arg == "--scenarios" && i + 1 < argc) {
             scenarios_path = argv[++i];
         } else if (arg == "--scan") {
@@ -376,9 +428,13 @@ int main(int argc, char** argv)
             size_t start = 0;
             while (true) {
                 size_t pos = list.find(',', start);
-                std::string token = list.substr(start, pos == std::string::npos ? std::string::npos : pos - start);
-                if (!token.empty()) scene_filters.push_back(token);
-                if (pos == std::string::npos) break;
+                std::string token = list.substr(
+                    start,
+                    pos == std::string::npos ? std::string::npos : pos - start);
+                if (!token.empty())
+                    scene_filters.push_back(token);
+                if (pos == std::string::npos)
+                    break;
                 start = pos + 1;
             }
         } else if (arg == "--tag" && i + 1 < argc) {
@@ -395,23 +451,27 @@ int main(int argc, char** argv)
         }
     }
     spdlog::set_level(static_cast<spdlog::level::level_enum>(log_level));
-    scalable_ccd::logger().set_level(static_cast<spdlog::level::level_enum>(log_level));
+    scalable_ccd::logger().set_level(
+        static_cast<spdlog::level::level_enum>(log_level));
 
     tbb::global_control thread_limiter(
         tbb::global_control::max_allowed_parallelism, num_threads);
 
-    // 数据目录：优先命令行 --data ；否则尝试环境变量；否则使用编译期默认 SCALABLE_CCD_DATA_DIR
+    // 数据目录：优先命令行 --data ；否则尝试环境变量；否则使用编译期默认
+    // SCALABLE_CCD_DATA_DIR
     fs::path data = fs::path(SCALABLE_CCD_DATA_DIR);
     if (!data_dir_cli.empty()) {
         data = fs::path(data_dir_cli);
     } else {
         const char* env_p = std::getenv("SCALABLE_CCD_DATA_DIR");
-        if (env_p && *env_p) data = fs::path(env_p);
+        if (env_p && *env_p)
+            data = fs::path(env_p);
     }
     // 兼容不同子路径命名：有些场景将帧/真值放在 scene/frames 与 scene/boxes 下
     std::vector<SceneCase> scenes;
     if (do_scan) {
-        scenes = scan_scenarios_from_dataset(data, max_per_scene, min_step, scene_filters);
+        scenes = scan_scenarios_from_dataset(
+            data, max_per_scene, min_step, scene_filters);
         if (scenes.empty()) {
             spdlog::warn("扫描数据集未发现场景：{}", data.string());
         } else {
@@ -441,7 +501,8 @@ int main(int argc, char** argv)
     for (const auto& s : scenes) {
         fs::path base = data / s.scene;
         // 路径兼容：有的条目给出完整子路径，有的仅文件名
-        auto make_path = [&](const std::string& p, const std::string& subdir) -> fs::path {
+        auto make_path = [&](const std::string& p,
+                             const std::string& subdir) -> fs::path {
             fs::path path = base / p;
             if (!fs::exists(path)) {
                 path = base / subdir / p;
@@ -456,7 +517,9 @@ int main(int argc, char** argv)
 
         verifier::MeshPair mp;
         if (!verifier::read_mesh_pair(file_t0, file_t1, mp)) {
-            spdlog::warn("读取场景失败: {} t0={} t1={}", s.scene, file_t0.string(), file_t1.string());
+            spdlog::warn(
+                "读取场景失败: {} t0={} t1={}", s.scene, file_t0.string(),
+                file_t1.string());
             continue;
         }
 
@@ -470,8 +533,10 @@ int main(int argc, char** argv)
                 verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
                 t.stop();
                 build_boxes_ms = t.getElapsedTimeInMilliSec();
-                spdlog::info("[CPU] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
-                             s.scene, t.getElapsedTimeInMilliSec(), vboxes.size(), eboxes.size(), fboxes.size());
+                spdlog::info(
+                    "[CPU] {}: 构建AABB {:.3f} ms (V={},E={},F={})", s.scene,
+                    t.getElapsedTimeInMilliSec(), vboxes.size(), eboxes.size(),
+                    fboxes.size());
             }
 
             int sort_axis = 0;
@@ -487,19 +552,27 @@ int main(int argc, char** argv)
                 std::vector<double> times;
                 times.reserve(repeat);
                 for (int r = 0; r < repeat; ++r) {
-                    spdlog::debug("[CPU][{}] broad_vf run {}/{}: V={},F={}", s.scene, r+1, repeat, vboxes.size(), fboxes.size());
-                    scalable_ccd::Timer t; t.start();
-                    scalable_ccd::sort_and_sweep(vboxes, fboxes, sort_axis, vf_overlaps);
+                    spdlog::debug(
+                        "[CPU][{}] broad_vf run {}/{}: V={},F={}", s.scene,
+                        r + 1, repeat, vboxes.size(), fboxes.size());
+                    scalable_ccd::Timer t;
+                    t.start();
+                    scalable_ccd::sort_and_sweep(
+                        vboxes, fboxes, sort_axis, vf_overlaps);
                     t.stop();
-                    spdlog::debug("[CPU][{}] broad_vf done: overlaps={}", s.scene, vf_overlaps.size());
+                    spdlog::debug(
+                        "[CPU][{}] broad_vf done: overlaps={}", s.scene,
+                        vf_overlaps.size());
                     times.push_back(t.getElapsedTimeInMilliSec());
                 }
                 double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
+                for (double x : times)
+                    avg_ms += x;
                 avg_ms /= std::max(1, (int)times.size());
                 // Offset to match ground-truth encoding (see tests)
                 {
-                    int offset = static_cast<int>(vboxes.size() + eboxes.size());
+                    int offset =
+                        static_cast<int>(vboxes.size() + eboxes.size());
                     for (auto& p : vf_overlaps) {
                         p.second += offset;
                     }
@@ -509,17 +582,19 @@ int main(int argc, char** argv)
                 run["t0"] = file_t0.filename().string();
                 run["t1"] = file_t1.filename().string();
                 run["backend"] = "cpu";
-                run["steps"] = {
-                    {"stage","broad_vf"},
-                    {"avg_ms", avg_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"build_boxes_ms", build_boxes_ms},
-                    {"sort_axis_end", sort_axis}
-                };
+                run["steps"] = { { "stage", "broad_vf" },
+                                 { "avg_ms", avg_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "build_boxes_ms", build_boxes_ms },
+                                 { "sort_axis_end", sort_axis } };
                 run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    vf_overlaps, {}, vf_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
                 aggregate["runs"].push_back(run);
             }
             sort_axis = 0;
@@ -532,15 +607,22 @@ int main(int argc, char** argv)
                 std::vector<double> times;
                 times.reserve(repeat);
                 for (int r = 0; r < repeat; ++r) {
-                    spdlog::debug("[CPU][{}] broad_ee run {}/{}: E={}", s.scene, r+1, repeat, eboxes.size());
-                    scalable_ccd::Timer t; t.start();
-                    scalable_ccd::sort_and_sweep(eboxes, sort_axis, ee_overlaps);
+                    spdlog::debug(
+                        "[CPU][{}] broad_ee run {}/{}: E={}", s.scene, r + 1,
+                        repeat, eboxes.size());
+                    scalable_ccd::Timer t;
+                    t.start();
+                    scalable_ccd::sort_and_sweep(
+                        eboxes, sort_axis, ee_overlaps);
                     t.stop();
-                    spdlog::debug("[CPU][{}] broad_ee done: overlaps={}", s.scene, ee_overlaps.size());
+                    spdlog::debug(
+                        "[CPU][{}] broad_ee done: overlaps={}", s.scene,
+                        ee_overlaps.size());
                     times.push_back(t.getElapsedTimeInMilliSec());
                 }
                 double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
+                for (double x : times)
+                    avg_ms += x;
                 avg_ms /= std::max(1, (int)times.size());
                 // Offset to match ground-truth encoding (see tests)
                 {
@@ -555,17 +637,19 @@ int main(int argc, char** argv)
                 run["t0"] = file_t0.filename().string();
                 run["t1"] = file_t1.filename().string();
                 run["backend"] = "cpu";
-                run["steps"] = {
-                    {"stage","broad_ee"},
-                    {"avg_ms", avg_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"build_boxes_ms", build_boxes_ms},
-                    {"sort_axis_end", sort_axis}
-                };
+                run["steps"] = { { "stage", "broad_ee" },
+                                 { "avg_ms", avg_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "build_boxes_ms", build_boxes_ms },
+                                 { "sort_axis_end", sort_axis } };
                 run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    ee_overlaps, {}, ee_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
                 aggregate["runs"].push_back(run);
             }
         }
@@ -575,7 +659,8 @@ int main(int argc, char** argv)
         if (backend == "cuda" || backend == "both") {
             using namespace scalable_ccd::cuda;
 
-            std::vector<scalable_ccd::cuda::AABB> vertex_boxes, edge_boxes, face_boxes;
+            std::vector<scalable_ccd::cuda::AABB> vertex_boxes, edge_boxes,
+                face_boxes;
             build_vertex_boxes(mp.V0, mp.V1, vertex_boxes);
             build_edge_boxes(vertex_boxes, mp.E, edge_boxes);
             build_face_boxes(vertex_boxes, mp.F, face_boxes);
@@ -585,9 +670,11 @@ int main(int argc, char** argv)
             // VF
             scalable_ccd::profiler().clear();
             {
-                scalable_ccd::Timer tb; tb.start();
-                broad.build(std::make_shared<DeviceAABBs>(vertex_boxes),
-                            std::make_shared<DeviceAABBs>(face_boxes));
+                scalable_ccd::Timer tb;
+                tb.start();
+                broad.build(
+                    std::make_shared<DeviceAABBs>(vertex_boxes),
+                    std::make_shared<DeviceAABBs>(face_boxes));
                 tb.stop();
                 // warmup
                 for (int w = 0; w < warmup; ++w) {
@@ -598,9 +685,10 @@ int main(int argc, char** argv)
                 }
                 std::vector<double> times;
                 times.reserve(repeat);
-                std::vector<std::pair<int,int>> vf_overlaps;
+                std::vector<std::pair<int, int>> vf_overlaps;
                 for (int r = 0; r < repeat; ++r) {
-                    scalable_ccd::Timer t; t.start();
+                    scalable_ccd::Timer t;
+                    t.start();
                     vf_overlaps = broad.detect_overlaps();
 #ifdef SCALABLE_CCD_WITH_CUDA
                     cudaDeviceSynchronize();
@@ -609,11 +697,14 @@ int main(int argc, char** argv)
                     times.push_back(t.getElapsedTimeInMilliSec());
                 }
                 double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
+                for (double x : times)
+                    avg_ms += x;
                 avg_ms /= std::max(1, (int)times.size());
 
-                // Offset for comparing with Mathematica ground-truth (same as tests)
-                int offset = static_cast<int>(vertex_boxes.size()) + static_cast<int>(edge_boxes.size());
+                // Offset for comparing with Mathematica ground-truth (same as
+                // tests)
+                int offset = static_cast<int>(vertex_boxes.size())
+                    + static_cast<int>(edge_boxes.size());
                 for (auto& p : vf_overlaps) {
                     p.second += offset;
                 }
@@ -623,15 +714,18 @@ int main(int argc, char** argv)
                 run["t0"] = file_t0.filename().string();
                 run["t1"] = file_t1.filename().string();
                 run["backend"] = "cuda";
-                run["steps"] = {
-                    {"stage","broad_vf"},
-                    {"avg_ms", avg_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"gpu_build_ms", tb.getElapsedTimeInMilliSec()}
-                };
-                auto cmp = verifier::compare_overlaps_with_truth(vf_overlaps, {}, vf_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                run["steps"] = { { "stage", "broad_vf" },
+                                 { "avg_ms", avg_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "gpu_build_ms",
+                                   tb.getElapsedTimeInMilliSec() } };
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    vf_overlaps, {}, vf_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
                 run["profiler"] = scalable_ccd::profiler().data();
                 aggregate["runs"].push_back(run);
             }
@@ -639,7 +733,8 @@ int main(int argc, char** argv)
             // EE
             scalable_ccd::profiler().clear();
             {
-                scalable_ccd::Timer tb; tb.start();
+                scalable_ccd::Timer tb;
+                tb.start();
                 broad.build(std::make_shared<DeviceAABBs>(edge_boxes));
                 tb.stop();
                 for (int w = 0; w < warmup; ++w) {
@@ -650,9 +745,10 @@ int main(int argc, char** argv)
                 }
                 std::vector<double> times;
                 times.reserve(repeat);
-                std::vector<std::pair<int,int>> ee_overlaps;
+                std::vector<std::pair<int, int>> ee_overlaps;
                 for (int r = 0; r < repeat; ++r) {
-                    scalable_ccd::Timer t; t.start();
+                    scalable_ccd::Timer t;
+                    t.start();
                     ee_overlaps = broad.detect_overlaps();
 #ifdef SCALABLE_CCD_WITH_CUDA
                     cudaDeviceSynchronize();
@@ -661,7 +757,8 @@ int main(int argc, char** argv)
                     times.push_back(t.getElapsedTimeInMilliSec());
                 }
                 double avg_ms = 0.0;
-                for (double x : times) avg_ms += x;
+                for (double x : times)
+                    avg_ms += x;
                 avg_ms /= std::max(1, (int)times.size());
 
                 // Offset (same as tests)
@@ -676,15 +773,18 @@ int main(int argc, char** argv)
                 run["t0"] = file_t0.filename().string();
                 run["t1"] = file_t1.filename().string();
                 run["backend"] = "cuda";
-                run["steps"] = {
-                    {"stage","broad_ee"},
-                    {"avg_ms", avg_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"gpu_build_ms", tb.getElapsedTimeInMilliSec()}
-                };
-                auto cmp = verifier::compare_overlaps_with_truth(ee_overlaps, {}, ee_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                run["steps"] = { { "stage", "broad_ee" },
+                                 { "avg_ms", avg_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "gpu_build_ms",
+                                   tb.getElapsedTimeInMilliSec() } };
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    ee_overlaps, {}, ee_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
                 run["profiler"] = scalable_ccd::profiler().data();
                 aggregate["runs"].push_back(run);
             }
@@ -693,7 +793,7 @@ int main(int argc, char** argv)
         (void)backend;
 #endif
 
-                // ---------------- Metal Broad Phase ----------------
+        // ---------------- Metal Broad Phase ----------------
         if (backend == "metal") {
 #ifdef SCALABLE_CCD_WITH_METAL
             std::vector<AABB> vboxes, eboxes, fboxes;
@@ -704,15 +804,19 @@ int main(int argc, char** argv)
                 verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
                 t.stop();
                 build_boxes_ms = t.getElapsedTimeInMilliSec();
-                spdlog::info("[METAL] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
-                    s.scene, build_boxes_ms, vboxes.size(), eboxes.size(), fboxes.size());
+                spdlog::info(
+                    "[METAL] {}: 构建AABB {:.3f} ms (V={},E={},F={})", s.scene,
+                    build_boxes_ms, vboxes.size(), eboxes.size(),
+                    fboxes.size());
             }
 
             const size_t vf_truth = load_truth_size(vf_gt);
             const size_t ee_truth = load_truth_size(ee_gt);
 
             {
-                auto vf_res = run_metal_stage(vboxes, &fboxes, true, metal_use_stq, warmup, repeat, vf_truth);
+                auto vf_res = run_metal_stage(
+                    vboxes, &fboxes, true, metal_use_stq, warmup, repeat,
+                    vf_truth);
                 int offset = static_cast<int>(vboxes.size() + eboxes.size());
                 for (auto& p : vf_res.overlaps) {
                     p.second += offset;
@@ -722,25 +826,29 @@ int main(int argc, char** argv)
                 run["t0"] = file_t0.filename().string();
                 run["t1"] = file_t1.filename().string();
                 run["backend"] = metal_use_stq ? "metal_stq" : "metal";
-                run["steps"] = {
-                    {"stage","broad_vf"},
-                    {"avg_ms", vf_res.avg_host_ms},
-                    {"gpu_ms", vf_res.avg_gpu_ms},
-                    {"e2e_ms", vf_res.e2e_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"build_boxes_ms", build_boxes_ms},
-                    {"sort_axis_end", vf_res.sort_axis},
-                    {"mode", metal_mode}
-                };
+                run["steps"] = { { "stage", "broad_vf" },
+                                 { "avg_ms", vf_res.avg_host_ms },
+                                 { "gpu_ms", vf_res.avg_gpu_ms },
+                                 { "e2e_ms", vf_res.e2e_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "build_boxes_ms", build_boxes_ms },
+                                 { "sort_axis_end", vf_res.sort_axis },
+                                 { "mode", metal_mode } };
                 run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(vf_res.overlaps, {}, vf_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    vf_res.overlaps, {}, vf_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
                 aggregate["runs"].push_back(run);
             }
 
             {
-                auto ee_res = run_metal_stage(eboxes, nullptr, false, metal_use_stq, warmup, repeat, ee_truth);
+                auto ee_res = run_metal_stage(
+                    eboxes, nullptr, false, metal_use_stq, warmup, repeat,
+                    ee_truth);
                 int offset = static_cast<int>(vboxes.size());
                 for (auto& p : ee_res.overlaps) {
                     p.first += offset;
@@ -751,36 +859,341 @@ int main(int argc, char** argv)
                 run["t0"] = file_t0.filename().string();
                 run["t1"] = file_t1.filename().string();
                 run["backend"] = metal_use_stq ? "metal_stq" : "metal";
-                run["steps"] = {
-                    {"stage","broad_ee"},
-                    {"avg_ms", ee_res.avg_host_ms},
-                    {"gpu_ms", ee_res.avg_gpu_ms},
-                    {"e2e_ms", ee_res.e2e_ms},
-                    {"repeats", repeat},
-                    {"warmup", warmup},
-                    {"build_boxes_ms", build_boxes_ms},
-                    {"sort_axis_end", ee_res.sort_axis},
-                    {"mode", metal_mode}
-                };
+                run["steps"] = { { "stage", "broad_ee" },
+                                 { "avg_ms", ee_res.avg_host_ms },
+                                 { "gpu_ms", ee_res.avg_gpu_ms },
+                                 { "e2e_ms", ee_res.e2e_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "build_boxes_ms", build_boxes_ms },
+                                 { "sort_axis_end", ee_res.sort_axis },
+                                 { "mode", metal_mode } };
                 run["threads"] = num_threads;
-                auto cmp = verifier::compare_overlaps_with_truth(ee_res.overlaps, {}, ee_gt);
-                run["compare"] = { {"true_positives", cmp.true_positives}, {"truth_total", cmp.truth_total}, {"algo_total", cmp.algo_total}, {"covers_truth", cmp.covers_truth} };
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    ee_res.overlaps, {}, ee_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
                 aggregate["runs"].push_back(run);
             }
 #else
-            spdlog::warn("Metal 后端未编译（缺少 SCALABLE_CCD_WITH_METAL 或非 Apple 平台），跳过 Metal 验证。");
+            spdlog::warn(
+                "Metal 后端未编译（缺少 SCALABLE_CCD_WITH_METAL 或非 Apple 平台），跳过 Metal 验证。");
 #endif
         }
 
-// ---------------- Per-Query Verification (optional) ----------------
+        // ---------------- Metal2 Broad Phase (strict correctness by default)
+        // ----------------
+        if (backend == "metal2") {
+#ifdef SCALABLE_CCD_WITH_METAL2
+            std::vector<scalable_ccd::AABB> vboxes, eboxes, fboxes;
+            double build_boxes_ms = 0.0;
+            {
+                scalable_ccd::Timer t;
+                t.start();
+                verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
+                t.stop();
+                build_boxes_ms = t.getElapsedTimeInMilliSec();
+                spdlog::info(
+                    "[METAL2] {}: 构建AABB {:.3f} ms (V={},E={},F={})", s.scene,
+                    build_boxes_ms, vboxes.size(), eboxes.size(),
+                    fboxes.size());
+            }
+            // VF
+            {
+                scalable_ccd::metal2::BroadPhase bp;
+                auto dV =
+                    std::make_shared<scalable_ccd::metal2::DeviceAABBs>(vboxes);
+                auto dF =
+                    std::make_shared<scalable_ccd::metal2::DeviceAABBs>(fboxes);
+                // warmup
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    (void)bp.detect_overlaps();
+                }
+                // repeats
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int, int>> vf_overlaps;
+                int sort_axis = 0; // for schema
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    scalable_ccd::Timer t;
+                    t.start();
+                    vf_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                auto timing = bp.last_timing();
+                double avg_ms = 0.0;
+                for (double x : times)
+                    avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                // Offset like tests
+                {
+                    int offset =
+                        static_cast<int>(vboxes.size() + eboxes.size());
+                    for (auto& p : vf_overlaps) {
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metal2";
+                run["steps"] = { { "stage", "broad_vf" },
+                                 { "avg_ms", avg_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "build_boxes_ms", build_boxes_ms },
+                                 { "sort_axis_end", sort_axis } };
+                // Metal2 细分计时（可选）
+                if (timing.total_ms >= 0.0) {
+                    run["steps"]["axis_merge_ms"] = timing.axis_merge_ms;
+                    run["steps"]["pairs_ms"] = timing.pairs_ms;
+                    run["steps"]["pairs_src"] = timing.pairs_src;
+                    run["steps"]["filter_ms"] = timing.filter_ms;
+                    run["steps"]["filter_src"] = timing.filter_src;
+                    run["steps"]["compose_ms"] = timing.compose_ms;
+                    run["steps"]["total_ms_m2"] = timing.total_ms;
+                }
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    vf_overlaps, {}, vf_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
+                aggregate["runs"].push_back(run);
+            }
+            // EE
+            {
+                scalable_ccd::metal2::BroadPhase bp;
+                auto dE =
+                    std::make_shared<scalable_ccd::metal2::DeviceAABBs>(eboxes);
+                // warmup
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dE);
+                    (void)bp.detect_overlaps();
+                }
+                // repeats
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int, int>> ee_overlaps;
+                int sort_axis_ee = 0;
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dE);
+                    scalable_ccd::Timer t;
+                    t.start();
+                    ee_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                auto timing_ee = bp.last_timing();
+                double avg_ms = 0.0;
+                for (double x : times)
+                    avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                // Offset like tests
+                {
+                    int offset = static_cast<int>(vboxes.size());
+                    for (auto& p : ee_overlaps) {
+                        p.first += offset;
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metal2";
+                run["steps"] = { { "stage", "broad_ee" },
+                                 { "avg_ms", avg_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "build_boxes_ms", build_boxes_ms },
+                                 { "sort_axis_end", sort_axis_ee } };
+                if (timing_ee.total_ms >= 0.0) {
+                    run["steps"]["axis_merge_ms"] = timing_ee.axis_merge_ms;
+                    run["steps"]["pairs_ms"] = timing_ee.pairs_ms;
+                    run["steps"]["pairs_src"] = timing_ee.pairs_src;
+                    run["steps"]["filter_ms"] = timing_ee.filter_ms;
+                    run["steps"]["filter_src"] = timing_ee.filter_src;
+                    run["steps"]["compose_ms"] = timing_ee.compose_ms;
+                    run["steps"]["total_ms_m2"] = timing_ee.total_ms;
+                }
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    ee_overlaps, {}, ee_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
+                aggregate["runs"].push_back(run);
+            }
+#else
+            spdlog::warn(
+                "Metal2 后端未编译（缺少 SCALABLE_CCD_WITH_METAL2 或非 Apple 平台），跳过 Metal2 验证。");
+#endif
+        }
+
+        // ---------------- Metal-cpp Broad Phase (strict correctness by
+        // default) ----------------
+        if (backend == "metalcpp") {
+#ifdef SCALABLE_CCD_WITH_METALCPP
+            // 显式做一次 warmup，便于环境自检（仅一次）
+            {
+                bool avail = scalable_ccd::metalcpp::MetalCppRuntime::instance()
+                                 .available();
+                bool wmp = avail
+                    && scalable_ccd::metalcpp::MetalCppRuntime::instance()
+                           .warmup();
+                spdlog::info(
+                    "[METALCPP] runtime available={}, warmup={}", avail, wmp);
+            }
+            std::vector<scalable_ccd::AABB> vboxes, eboxes, fboxes;
+            double build_boxes_ms = 0.0;
+            {
+                scalable_ccd::Timer t;
+                t.start();
+                verifier::build_cpu_boxes(mp, vboxes, eboxes, fboxes);
+                t.stop();
+                build_boxes_ms = t.getElapsedTimeInMilliSec();
+                spdlog::info(
+                    "[METALCPP] {}: 构建AABB {:.3f} ms (V={},E={},F={})",
+                    s.scene, build_boxes_ms, vboxes.size(), eboxes.size(),
+                    fboxes.size());
+            }
+            // VF
+            {
+                scalable_ccd::metalcpp::BroadPhase bp;
+                auto dV = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(
+                    vboxes);
+                auto dF = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(
+                    fboxes);
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    (void)bp.detect_overlaps();
+                }
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int, int>> vf_overlaps;
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dV, dF);
+                    scalable_ccd::Timer t;
+                    t.start();
+                    vf_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                double avg_ms = 0.0;
+                for (double x : times)
+                    avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                {
+                    int offset =
+                        static_cast<int>(vboxes.size() + eboxes.size());
+                    for (auto& p : vf_overlaps) {
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metalcpp";
+                run["steps"] = { { "stage", "broad_vf" },
+                                 { "avg_ms", avg_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "build_boxes_ms", build_boxes_ms } };
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    vf_overlaps, {}, vf_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
+                aggregate["runs"].push_back(run);
+            }
+            // EE
+            {
+                scalable_ccd::metalcpp::BroadPhase bp;
+                auto dE = std::make_shared<scalable_ccd::metalcpp::DeviceAABBs>(
+                    eboxes);
+                for (int w = 0; w < warmup; ++w) {
+                    bp.clear();
+                    bp.build(dE);
+                    (void)bp.detect_overlaps();
+                }
+                std::vector<double> times;
+                times.reserve(repeat);
+                std::vector<std::pair<int, int>> ee_overlaps;
+                for (int r = 0; r < repeat; ++r) {
+                    bp.clear();
+                    bp.build(dE);
+                    scalable_ccd::Timer t;
+                    t.start();
+                    ee_overlaps = bp.detect_overlaps();
+                    t.stop();
+                    times.push_back(t.getElapsedTimeInMilliSec());
+                }
+                double avg_ms = 0.0;
+                for (double x : times)
+                    avg_ms += x;
+                avg_ms /= std::max(1, (int)times.size());
+                {
+                    int offset = static_cast<int>(vboxes.size());
+                    for (auto& p : ee_overlaps) {
+                        p.first += offset;
+                        p.second += offset;
+                    }
+                }
+                json run;
+                run["scene"] = s.scene;
+                run["t0"] = file_t0.filename().string();
+                run["t1"] = file_t1.filename().string();
+                run["backend"] = "metalcpp";
+                run["steps"] = { { "stage", "broad_ee" },
+                                 { "avg_ms", avg_ms },
+                                 { "repeats", repeat },
+                                 { "warmup", warmup },
+                                 { "build_boxes_ms", build_boxes_ms } };
+                run["threads"] = num_threads;
+                auto cmp = verifier::compare_overlaps_with_truth(
+                    ee_overlaps, {}, ee_gt);
+                run["compare"] = { { "true_positives", cmp.true_positives },
+                                   { "truth_total", cmp.truth_total },
+                                   { "algo_total", cmp.algo_total },
+                                   { "covers_truth", cmp.covers_truth } };
+                aggregate["runs"].push_back(run);
+            }
+#else
+            spdlog::warn(
+                "Metal-cpp 后端未编译（缺少 SCALABLE_CCD_WITH_METALCPP 或非 Apple 平台），跳过 Metal-cpp 验证。");
+#endif
+        }
+        // ---------------- Per-Query Verification (optional) ----------------
+>>>>>>> adb3bc5 (Implement Metal2 Broad Phase GPU Composition (Scan + Compact))
         if (run_queries) {
 #ifdef SCALABLE_CCD_WITH_CUDA
-            auto step_from_path = [&](const fs::path& p)->int{
-                int st=-1; extract_step_from_filename(p.stem().string(), st); return st;
+            auto step_from_path = [&](const fs::path& p) -> int {
+                int st = -1;
+                extract_step_from_filename(p.stem().string(), st);
+                return st;
             };
             int st0 = step_from_path(file_t0);
             if (st0 >= 0) {
-                auto qrs = verifier::verify_queries_for_step(base, s.scene, st0, max_queries, /*on_cuda_only*/true);
+                auto qrs = verifier::verify_queries_for_step(
+                    base, s.scene, st0, max_queries, /*on_cuda_only*/ true);
                 for (const auto& qr : qrs) {
                     json jq;
                     jq["scene"] = qr.scene;
