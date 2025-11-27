@@ -1,0 +1,16 @@
+{
+  "backend": "cuda",
+  "device": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+  "device_id": "0",
+  "device_alias": "rtx2000ada",
+  "category": "broad_phase_sap",
+  "case_name": "Cloth-Funnel：宽阶段",
+  "section": "Cloth-Funnel",
+  "slug": "cloth_funnel_rtx2000ada",
+  "vf_pairs": 92,
+  "ee_pairs": 263,
+  "host_total_ms": 218.0,
+  "gpu_ms": 218.0,
+  "notes": "布料漏斗；包含mesh读取/AABB构建/两次SAP",
+  "timestamp": 1764255143
+}

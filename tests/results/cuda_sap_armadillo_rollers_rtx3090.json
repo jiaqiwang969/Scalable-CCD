@@ -1,0 +1,16 @@
+{
+  "backend": "cuda",
+  "device": "NVIDIA GeForce RTX 3090",
+  "device_id": "1",
+  "device_alias": "rtx3090",
+  "category": "broad_phase_sap",
+  "case_name": "Armadillo-Rollers：宽阶段",
+  "section": "Armadillo-Rollers",
+  "slug": "armadillo_rollers_rtx3090",
+  "vf_pairs": 4652,
+  "ee_pairs": 19313,
+  "host_total_ms": 6943.0,
+  "gpu_ms": 6943.0,
+  "notes": "犰狳滚轮模拟；包含mesh读取/AABB构建/两次SAP",
+  "timestamp": 1764255174
+}

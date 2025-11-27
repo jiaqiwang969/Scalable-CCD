@@ -1,0 +1,16 @@
+{
+  "backend": "cuda",
+  "device": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+  "device_id": "0",
+  "device_alias": "rtx2000ada",
+  "category": "broad_phase_sap",
+  "case_name": "N-Body：宽阶段",
+  "section": "N-Body",
+  "slug": "n_body_rtx2000ada",
+  "vf_pairs": 9460,
+  "ee_pairs": 41036,
+  "host_total_ms": 22729.0,
+  "gpu_ms": 22729.0,
+  "notes": "N体模拟；包含mesh读取/AABB构建/两次SAP",
+  "timestamp": 1764255166
+}

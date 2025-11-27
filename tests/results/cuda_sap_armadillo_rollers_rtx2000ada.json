@@ -1,0 +1,16 @@
+{
+  "backend": "cuda",
+  "device": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+  "device_id": "0",
+  "device_alias": "rtx2000ada",
+  "category": "broad_phase_sap",
+  "case_name": "Armadillo-Rollers：宽阶段",
+  "section": "Armadillo-Rollers",
+  "slug": "armadillo_rollers_rtx2000ada",
+  "vf_pairs": 4652,
+  "ee_pairs": 19313,
+  "host_total_ms": 9873.0,
+  "gpu_ms": 9873.0,
+  "notes": "犰狳滚轮模拟；包含mesh读取/AABB构建/两次SAP",
+  "timestamp": 1764255136
+}

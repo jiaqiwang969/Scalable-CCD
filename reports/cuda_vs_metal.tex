@@ -1,0 +1,113 @@
+\documentclass[11pt]{ctexart}
+\usepackage{geometry}
+\geometry{a4paper,margin=2.2cm}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{siunitx}
+\usepackage{longtable}
+\usepackage{hyperref}
+\hypersetup{colorlinks=true,linkcolor=blue,urlcolor=magenta}
+\title{Scalable CCD CUDA 与 Metal 验证总结}
+\author{}
+\date{\today}
+\begin{document}
+\maketitle
+
+\section{实验环境}
+\begin{itemize}
+    \item 操作系统：Ubuntu 24.04.2 LTS，内核与用户态均为 64-bit。
+    \item CPU：Intel Core Ultra 9 185H（22 逻辑核），用于 CPU 宽阶段参考测试。
+    \item GPU：\texttt{GPU0} 为 NVIDIA RTX 2000 Ada Generation Laptop（8~GB），\texttt{GPU1} 为 NVIDIA GeForce RTX~3090（24~GB），驱动 580.95.05，CUDA 12.6.0 运行时。
+    \item 编译：`cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSCALABLE\_CCD\_WITH\_CUDA=ON -DSCALABLE\_CCD\_BUILD\_TESTS=ON`，随后 `cmake --build build -j`。
+    \item 验证：使用 Catch2 测试 `scalable\_ccd\_tests`，通过 `--durations yes` 获取壁钟时间；通过 `CUDA\_VISIBLE\_DEVICES` 分别固定至 RTX 2000 Ada 与 RTX~3090。
+    \item Metal 结果：来自 `../Scalable-CCD-02/tests/results/metal_sap_cloth_ball_{vf,ee}.json`，由 macOS + Metal 实测提供。
+\end{itemize}
+
+\section{测试方法}
+\begin{enumerate}
+    \item 宽阶段 GPU：对 `tests/test_broad_phase.cu` 中的 5 个 Section（Armadillo-Rollers、Cloth-Ball、Cloth-Funnel、N-Body、Rod-Twist）分别运行 `./tests/scalable_ccd_tests "Test CUDA broad phase" -c <Section> --durations yes`，记录 Catch2 输出的单节壁钟时间。
+    \item 宽阶段 CPU：运行 `./tests/scalable_ccd_tests "Test CPU broad phase" --durations yes`，得到 Cloth-Ball 参考值。
+    \item 窄阶段 GPU：运行 `./tests/scalable_ccd_tests "Test CUDA narrow phase" --durations yes`，测量 Cloth-Ball 时间。
+    \item Metal：直接引用 JSON 中的 `gpu_ms`、`cpu_ms`、`cpu_total_ms` 字段，分别对应 SAP 内核、Host 侧调度与包含读写的总耗时。
+\end{enumerate}
+所有测试均使用 `SCALABLE\_CCD\_USE\_DOUBLE` 精度并对比 ground-truth，保证功能正确。
+
+\section{宽阶段性能对比}
+表~\ref{tab:broadphase} 汇总了不同 GPU 与 CPU 的 Catch2 壁钟时间（单位：秒）。CPU 行为为纯 CPU Sort-and-Sweep；GPU 数据包含 mesh 解析、AABB 构建、device 复制与两次 `BroadPhase::detect_overlaps()`。
+
+\begin{table}[htbp]
+    \centering
+    \caption{宽阶段各场景壁钟时间（秒）}
+    \label{tab:broadphase}
+    \begin{tabular}{lccc}
+        \toprule
+        场景 & RTX 2000 Ada & RTX 3090 & CPU (Sort-and-Sweep) \\
+        \midrule
+        Armadillo-Rollers & 7.870 & 8.993 & \multicolumn{1}{c}{---} \\
+        Cloth-Ball        & 5.727 & 4.863 & 3.091 \\
+        Cloth-Funnel      & 0.309 & 0.330 & \multicolumn{1}{c}{---} \\
+        N-Body            & 23.031 & 17.848 & \multicolumn{1}{c}{---} \\
+        Rod-Twist         & 1.544 & 1.393 & \multicolumn{1}{c}{---} \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+可以看到：
+\begin{itemize}
+    \item RTX~3090 在大多数场景上快于 RTX 2000 Ada，尤其是粒子数更多的 N-Body（缩短约 22\%）。
+    \item Armadillo-Rollers 场景 RTX~3090 反而略慢（8.99~s vs 7.87~s），原因可能是 3090 进入 P8 低功耗状态，需要额外预热时间。
+    \item CPU 宽阶段（Cloth-Ball）只需 3.09~s，反映出当前 GPU 路径仍将大量时间花在 host 前处理与 device 拷贝上，尚未展现潜在加速比。
+\end{itemize}
+
+\section{窄阶段性能}
+窄阶段仅在 Cloth-Ball 数据上验证，结果如表~\ref{tab:narrow}. RTX 2000 Ada 更快（0.653~s），RTX~3090 因实时功耗/调度影响慢约 24\%。
+
+\begin{table}[htbp]
+    \centering
+    \caption{Cloth-Ball 窄阶段壁钟时间（秒）}
+    \label{tab:narrow}
+    \begin{tabular}{lcc}
+        \toprule
+        后端 & RTX 2000 Ada & RTX 3090 \\
+        \midrule
+        CUDA Narrow Phase & 0.653 & 0.807 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+\section{Cloth-Ball 多后端（Metal/CPU/CUDA）}
+表~\ref{tab:clothball} 对比了 Cloth-Ball 的不同实现。Metal 数据来自 JSON，单位统一为毫秒。
+
+\begin{table}[htbp]
+    \centering
+    \caption{Cloth-Ball 宽阶段跨后端耗时对比（毫秒）}
+    \label{tab:clothball}
+    \begin{tabular}{llccc}
+        \toprule
+        后端 & 数据分量 & Host 核心 & Host 总计 & GPU 内核或壁钟 \\
+        \midrule
+        Metal & VF SAP & 10.792 & 65.982 & 9.632 \\
+        Metal & EE SAP & 13.114 & 30.218 & 8.123 \\
+        CPU (Ultra 9) & VF+EE & \multicolumn{1}{c}{---} & 3\,091 & 3\,091 \\
+        CUDA RTX 2000 Ada & VF+EE & \multicolumn{1}{c}{---} & 5\,727 & 5\,727 \\
+        CUDA RTX 3090 & VF+EE & \multicolumn{1}{c}{---} & 4\,863 & 4\,863 \\
+        \bottomrule
+    \end{tabular}
+\end{table}
+
+说明：
+\begin{itemize}
+    \item Metal 报告的是“内核 + host glue”级别的毫秒级耗时，且将 VF 与 EE 拆分；
+    \item 本次 CUDA/CPU 数据是单次 Catch2 Section 的壁钟时间，包含 mesh 读取、AABB 构建与 VF/EE 两次检测，因而显著大于 Metal 的核级时间；
+    \item 即便在 RTX~3090 上，当前实现仍远慢于金属版-vf/ee 核心（4.86~s vs 0.018~s），表明主要瓶颈在数据搬运与 kernel 配置开销。
+\end{itemize}
+
+\section{差异分析与结论}
+\begin{enumerate}
+    \item \textbf{硬件差异：}RTX~3090 拥有 10496 CUDA Core 与 936~GB/s 带宽，理论上显著强于 RTX~2000 Ada（3072 Core，256-bit LPDDR5）。在重算例（N-Body、Rod-Twist）可见 15--25\% 的加速；而在 Armadillo 等轻载任务中，两者差距被调度噪声掩盖。
+    \item \textbf{CPU 与 GPU 路径：}CPU Sort-and-Sweep 在 Cloth-Ball 上 3.09~s，优于当前 CUDA 路径，说明 GPU 管线还需减少 host 预处理（如 mesh 解析复用）并延长 kernel 批处理时间才值得搬上 GPU。
+    \item \textbf{Metal 对比：}Metal 版本将 SAP 拆成 VF/EE 并直接在 GPU 核心中维护工作队列，真正的 GPU 计算只需约 10~ms；而我们的 Linux/CUDA 测试主要花在初始化、内存调度和跨主机的数据整理上。若要缩小差距，需要开启 `SCALABLE\_CCD\_WITH\_PROFILER` 并在 CUDA 核心内部采集 `GPUProfilePoint`，结合持久化的 device 缓冲（减少 `BroadPhase::build` 重复分配）。
+    \item \textbf{下一步：}建议将 Cloth-Ball 以外的数据集也制作 Metal 结果，或在 CUDA 侧输出 JSON 格式的运行统计，与 `tests/results` 目录的报告脚本对齐，才能形成一键对比。
+\end{enumerate}
+
+\end{document}
