@@ -1,0 +1,116 @@
+{
+  "generated_at": "2025-11-27T18:05:04.299355",
+  "comparisons": [
+    {
+      "slug": "cloth_ball_ee",
+      "case_name": "Cloth-Ball\uff1a\u8fb9-\u8fb9",
+      "cuda": {
+        "gpu_ms": 68.00048065185547,
+        "overlaps_count": 5197332,
+        "passed": true
+      },
+      "metal_sap": {
+        "gpu_ms": 8.164750001014909,
+        "overlaps_count": 5197332,
+        "passed": true
+      },
+      "metal_stq": {
+        "gpu_ms": 60.295750001387205,
+        "overlaps_count": 5197332,
+        "passed": true
+      },
+      "match": true,
+      "speedup": "Metal 8.3x"
+    },
+    {
+      "slug": "cloth_ball_vf",
+      "case_name": "Cloth-Ball\uff1a\u9876\u70b9-\u9762",
+      "cuda": {
+        "gpu_ms": 46.93967819213867,
+        "overlaps_count": 1655541,
+        "passed": true
+      },
+      "metal_sap": {
+        "gpu_ms": 11.082333334343275,
+        "overlaps_count": 1655541,
+        "passed": true
+      },
+      "metal_stq": {
+        "gpu_ms": 73.77645833184943,
+        "overlaps_count": 1655541,
+        "passed": true
+      },
+      "match": true,
+      "speedup": "Metal 4.2x"
+    },
+    {
+      "slug": "single_list_chain",
+      "case_name": "\u5355\u5217\u8868\uff1a\u94fe\u5f0f\u91cd\u53e0",
+      "cuda": {
+        "gpu_ms": 11.166912078857422,
+        "overlaps_count": 3,
+        "passed": true
+      },
+      "metal_sap": {
+        "gpu_ms": 0.01420833359588869,
+        "overlaps_count": 3,
+        "passed": true
+      },
+      "metal_stq": {
+        "gpu_ms": 0.01866666934802197,
+        "overlaps_count": 3,
+        "passed": true
+      },
+      "match": true,
+      "speedup": "Metal 785.9x"
+    },
+    {
+      "slug": "single_list_shared_vertex_filtered",
+      "case_name": "\u5355\u5217\u8868\uff1a\u5171\u4eab\u9876\u70b9\u8fc7\u6ee4",
+      "cuda": {
+        "gpu_ms": 11.050335884094238,
+        "overlaps_count": 0,
+        "passed": true
+      },
+      "metal_sap": {
+        "gpu_ms": 0.012083331967005506,
+        "overlaps_count": 0,
+        "passed": true
+      },
+      "metal_stq": {
+        "gpu_ms": 0.017083333659684286,
+        "overlaps_count": 0,
+        "passed": true
+      },
+      "match": true,
+      "speedup": "Metal 914.5x"
+    },
+    {
+      "slug": "two_lists_cross_only",
+      "case_name": "\u53cc\u5217\u8868\uff1a\u4ec5\u8de8\u5217\u8868\u914d\u5bf9",
+      "cuda": {
+        "gpu_ms": 11.52569580078125,
+        "overlaps_count": 2,
+        "passed": true
+      },
+      "metal_sap": {
+        "gpu_ms": 0.01433333454770036,
+        "overlaps_count": 2,
+        "passed": true
+      },
+      "metal_stq": {
+        "gpu_ms": 0.01799999881768599,
+        "overlaps_count": 2,
+        "passed": true
+      },
+      "match": true,
+      "speedup": "Metal 804.1x"
+    }
+  ],
+  "summary": {
+    "total": 5,
+    "matched": 5,
+    "mismatched": 0,
+    "pending": 0
+  }
+}

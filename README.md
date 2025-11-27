@@ -3,80 +3,149 @@
 [![Build](https://github.com/continuous-collision-detection/scalable-ccd/actions/workflows/continuous.yml/badge.svg)](https://github.com/continuous-collision-detection/scalable-ccd/actions/workflows/continuous.yml)
 [![License](https://img.shields.io/github/license/continuous-collision-detection/scalable-ccd.svg?color=blue)](https://github.com/continuous-collision-detection/scalable-ccd/blob/main/LICENSE)
 
-Sweep and Tiniest Queue & Tight-Inclusion GPU CCD
+GPU-accelerated Continuous Collision Detection using Sweep and Tiniest Queue (STQ) algorithm with Tight-Inclusion root finding.
 
-## Getting Started
+## Supported Backends
+
+| Backend | Platform | Status |
+|:--------|:---------|:-------|
+| **CUDA** | NVIDIA GPU | ✅ Original Implementation |
+| **Metal** | Apple Silicon (M1/M2/M3) | ✅ Ported Implementation |
+| **CPU** | All Platforms | ✅ Fallback |
+
+## Quick Start
 
 ### Prerequisites
 
-* A C/C++ compiler (at least support for C++17)
-* CMake (version 3.18 or newer)
-* Optionally: A CUDA-compatible GPU and the CUDA toolkit installed
+- C++17 compatible compiler
+- CMake 3.18+
+- **For CUDA**: NVIDIA GPU + CUDA Toolkit
+- **For Metal**: macOS with Apple Silicon or AMD GPU
 
-### Building
+### Build
 
-The easiest way to add this project to an existing CMake project is to download it through CMake. Here is an example of how to add this project to your CMake project using [CPM](https://github.com/cpm-cmake/CPM.cmake):
+```bash
+mkdir build && cd build
 
-```cmake
-# Scalable CCD (https://github.com/continuous-collision-detection/scalable-ccd)
-# License: Apache 2.0
-if(TARGET scalable_ccd::scalable_ccd)
-    return()
-endif()
+# CUDA build (Linux/Windows with NVIDIA GPU)
+cmake .. -DSCALABLE_CCD_WITH_CUDA=ON
+make -j
 
-message(STATUS "Third-party: creating target 'scalable_ccd::scalable_ccd'")
-
-set(SCALABLE_CCD_WITH_CUDA ${MY_PROJECT_WITH_CUDA} CACHE BOOL "Enable CUDA CCD" FORCE)
-
-include(CPM)
-CPMAddPackage("gh:continuous-collision-detection/scalable-ccd#${SCALABLE_CCD_GIT_TAG}")
+# Metal build (macOS)
+cmake .. -DSCALABLE_CCD_WITH_METAL=ON
+make -j
 ```
 
-where `MY_PROJECT_WITH_CUDA` is an example variable set in your project and  `SCALABLE_CCD_GIT_TAG` is set to the version of this project you want to use. This will download and add this project to CMake. You can then be linked against it using
+### Run Benchmarks
 
-```cmake
-# Link against the Scalable CCD
-target_link_libraries(my_target PRIVATE scalable_ccd::scalable_ccd)
+```bash
+# Run all broad phase tests
+./build/tests/scalable_ccd_tests "[broad_phase]"
+
+# Run Metal-specific tests
+./build/tests/scalable_ccd_tests "[metal2]"
+
+# Run CUDA-specific tests
+./build/tests/scalable_ccd_tests "[cuda]"
+
+# Generate JSON benchmark results
+./scripts/run_benchmarks.sh
 ```
 
-where `my_target` is the name of your library/binary.
+## Benchmark Results
 
-#### Dependencies
+See [BENCHMARK.md](BENCHMARK.md) for detailed performance comparison between CUDA and Metal implementations.
 
-**All required dependencies are downloaded through CMake** depending on the build options.
+### Summary
 
-The following libraries are used in this project:
+| Phase | Test Case | CUDA | Metal | Match |
+|:------|:----------|:-----|:------|:-----:|
+| Broad Phase SAP | Cloth-Ball VF | ✅ | ✅ | ✅ |
+| Broad Phase SAP | Cloth-Ball EE | ✅ | ✅ | ✅ |
+| Broad Phase STQ | All tests | ✅ | ✅ | ✅ |
+| Narrow Phase | VF/EE queries | ✅ | ✅ | ✅ |
 
-* [Eigen](https://eigen.tuxfamily.org/): linear algebra
-* [oneTBB](https://github.com/oneapi-src/oneTBB): CPU multi-threading
-* [spdlog](https://github.com/gabime/spdlog): logging
+## Project Structure
 
-##### Optional
+```
+Scalable-CCD/
+├── src/scalable_ccd/
+│   ├── cuda/           # CUDA implementation
+│   └── metal2/         # Metal implementation
+│       ├── broad_phase/
+│       ├── narrow_phase/
+│       └── runtime/
+├── tests/
+│   ├── results/        # Benchmark JSON outputs
+│   │   ├── cuda_*.json
+│   │   ├── metal_*.json
+│   │   └── comparison_report.json
+│   └── data/           # Test datasets
+├── scripts/
+│   └── run_benchmarks.sh
+├── BENCHMARK.md        # Performance comparison
+└── README.md
+```
 
-* [CUDA](https://developer.nvidia.com/cuda-toolkit): GPU acceleration
-	* Required when using the CMake option `SCALABLE_CCD_WITH_CUDA`
-* [nlohmann/json](https://github.com/nlohmann/json): saving profiler data
-    * Required when using the CMake option `SCALABLE_CCD_WITH_PROFILER`
+## JSON Output Format
 
-## Usage
+All benchmark results are saved in JSON format for easy comparison:
 
-:hammer_and_wrench: **ToDo**: Write usage instructions.
+```json
+{
+  "backend": "cuda|metal_sap|metal_stq",
+  "category": "broad_phase_sap|broad_phase_stq|narrow_phase",
+  "case_name": "Test case description",
+  "slug": "test_case_id",
+  "overlaps_count": 12345,
+  "gpu_ms": 10.5,
+  "cpu_ms": 100.0,
+  "passed": true,
+  "timestamp": 1234567890
+}
+```
+
+## Adding New Backend Results
+
+1. Run benchmarks on target platform:
+   ```bash
+   ./scripts/run_benchmarks.sh
+   ```
+
+2. Copy JSON results to `tests/results/`:
+   ```bash
+   cp *.json tests/results/
+   ```
+
+3. Run comparison script:
+   ```bash
+   python scripts/compare_results.py
+   ```
+
+## Dependencies
+
+| Library | Purpose | Required |
+|:--------|:--------|:---------|
+| [Eigen](https://eigen.tuxfamily.org/) | Linear algebra | Yes |
+| [oneTBB](https://github.com/oneapi-src/oneTBB) | CPU multi-threading | Yes |
+| [spdlog](https://github.com/gabime/spdlog) | Logging | Yes |
+| [nlohmann/json](https://github.com/nlohmann/json) | JSON output | Optional |
+| CUDA Toolkit | NVIDIA GPU support | Optional |
+| Metal Framework | Apple GPU support | Optional |
 
 ## Citation
 
-If you use this code in your project, please consider citing our paper:
-
 ```bibtex
 @misc{belgrod2023time,
-	title        = {Time of Impact Dataset for Continuous Collision Detection and a Scalable Conservative Algorithm},
-	author       = {David Belgrod and Bolun Wang and Zachary Ferguson and Xin Zhao and Marco Attene and Daniele Panozzo and Teseo Schneider},
-	year         = 2023,
-	eprint       = {2112.06300},
-	archiveprefix = {arXiv},
-	primaryclass = {cs.GR}
+    title        = {Time of Impact Dataset for Continuous Collision Detection and a Scalable Conservative Algorithm},
+    author       = {David Belgrod and Bolun Wang and Zachary Ferguson and Xin Zhao and Marco Attene and Daniele Panozzo and Teseo Schneider},
+    year         = 2023,
+    eprint       = {2112.06300},
+    archiveprefix = {arXiv},
+    primaryclass = {cs.GR}
 }
 ```
 
 ## License
 
-This project is licensed under the Apache-2.0 license - see the [LICENSE](https://github.com/continuous-collision-detection/scalable-ccd/blob/main/LICENSE) file for details.
+Apache-2.0 - see [LICENSE](LICENSE) for details.
