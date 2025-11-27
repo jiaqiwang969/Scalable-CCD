@@ -241,10 +241,11 @@ TestResult run_test(const std::string& section, const std::string& slug, const s
 }
 
 int main(int argc, char* argv[]) {
-    // Set environment for GPU path
-    setenv("SCALABLE_CCD_METAL2_USE_STQ", "1", 1);
-    setenv("SCALABLE_CCD_METAL2_FILTER", "gpu", 1);
-    setenv("SCALABLE_CCD_METAL2_STQ_MAX_NEIGHBORS", "512", 1);
+    // Use strict mode (CPU path) which is currently faster
+    // GPU fused path has performance issues to investigate
+    // setenv("SCALABLE_CCD_METAL2_USE_STQ", "1", 1);
+    // setenv("SCALABLE_CCD_METAL2_FILTER", "gpu", 1);
+    // setenv("SCALABLE_CCD_METAL2_STQ_MAX_NEIGHBORS", "512", 1);
 
     fs::path data("/Users/jqwang/128-ccd-cuda2metal/Scalable-CCD/tests/data-full");
     fs::path output_dir("/Users/jqwang/128-ccd-cuda2metal/Scalable-CCD/tests/results");
@@ -275,7 +276,7 @@ int main(int argc, char* argv[]) {
     auto r1 = run_test("Armadillo-Rollers", "armadillo_rollers", "Armadillo-Rollers：宽阶段",
         data / "armadillo-rollers/frames/326.ply",
         data / "armadillo-rollers/frames/327.ply",
-        "犰狳滚轮模拟；Metal2 STQ 模式；包含 mesh 读取 / AABB 构建 / 两次检测");
+        "犰狳滚轮模拟；Metal2 SAP 模式；包含 mesh 读取 / AABB 构建 / 两次检测");
     write_json(r1, device, alias, output_dir);
     results.push_back(r1);
 
@@ -283,7 +284,7 @@ int main(int argc, char* argv[]) {
     auto r2 = run_test("Cloth-Funnel", "cloth_funnel", "Cloth-Funnel：宽阶段",
         data / "cloth-funnel/frames/227.ply",
         data / "cloth-funnel/frames/228.ply",
-        "布料漏斗；Metal2 STQ 模式；包含 mesh 读取 / AABB 构建 / 两次检测");
+        "布料漏斗；Metal2 SAP 模式；包含 mesh 读取 / AABB 构建 / 两次检测");
     write_json(r2, device, alias, output_dir);
     results.push_back(r2);
 
@@ -291,7 +292,7 @@ int main(int argc, char* argv[]) {
     auto r3 = run_test("N-Body", "n_body", "N-Body：宽阶段",
         data / "n-body-simulation/frames/balls16_18.ply",
         data / "n-body-simulation/frames/balls16_19.ply",
-        "N体模拟；Metal2 STQ 模式；包含 mesh 读取 / AABB 构建 / 两次检测");
+        "N体模拟；Metal2 SAP 模式；包含 mesh 读取 / AABB 构建 / 两次检测");
     write_json(r3, device, alias, output_dir);
     results.push_back(r3);
 

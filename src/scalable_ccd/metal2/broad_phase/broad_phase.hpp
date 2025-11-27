@@ -158,7 +158,7 @@ public:
         const bool strict =
             env_flag_enabled("SCALABLE_CCD_METAL2_STRICT", true);
         const bool observe =
-            env_flag_enabled("SCALABLE_CCD_METAL2_OBSERVE", true);
+            env_flag_enabled("SCALABLE_CCD_METAL2_OBSERVE", false);
         const bool log_timing =
             env_flag_enabled("SCALABLE_CCD_METAL2_LOG_TIMING", false);
         // 融合内核开关（默认开启）

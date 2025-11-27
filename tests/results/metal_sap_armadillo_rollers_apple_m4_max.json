@@ -8,12 +8,12 @@
   "slug": "armadillo_rollers_apple_m4_max",
   "vf_pairs": 2031902,
   "ee_pairs": 5068080,
-  "host_total_ms": 2130.495,
-  "gpu_ms": 2130.495,
-  "vf_total_ms": 786.502,
-  "ee_total_ms": 1335.711,
-  "vf_stq_ms": 46.256,
-  "ee_stq_ms": 46.256,
-  "notes": "犰狳滚轮模拟；Metal2 STQ 模式；包含 mesh 读取 / AABB 构建 / 两次检测",
-  "timestamp": 1764256369
+  "host_total_ms": 84.849,
+  "gpu_ms": 84.849,
+  "vf_total_ms": 26.188,
+  "ee_total_ms": 29.404,
+  "vf_stq_ms": 0.000,
+  "ee_stq_ms": 0.000,
+  "notes": "犰狳滚轮模拟；Metal2 SAP 模式；包含 mesh 读取 / AABB 构建 / 两次检测",
+  "timestamp": 1764257388
 }
