@@ -1,0 +1,16 @@
+{
+  "backend": "cuda",
+  "device": "NVIDIA GeForce RTX 3090",
+  "device_id": "1",
+  "device_alias": "rtx3090",
+  "category": "broad_phase_sap",
+  "case_name": "Rod-Twist：宽阶段",
+  "section": "Rod-Twist",
+  "slug": "rod_twist_rtx3090",
+  "vf_pairs": null,
+  "ee_pairs": null,
+  "host_total_ms": 1378.0,
+  "gpu_ms": 1378.0,
+  "notes": "杆扭转；包含mesh读取/AABB构建/两次SAP",
+  "timestamp": 1764255199
+}

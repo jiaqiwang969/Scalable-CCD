@@ -1,0 +1,16 @@
+{
+  "backend": "cuda",
+  "device": "NVIDIA RTX 2000 Ada Generation Laptop GPU",
+  "device_id": "0",
+  "device_alias": "rtx2000ada",
+  "category": "broad_phase_sap",
+  "case_name": "Cloth-Ball：宽阶段",
+  "section": "Cloth-Ball",
+  "slug": "cloth_ball_rtx2000ada",
+  "vf_pairs": 1655541,
+  "ee_pairs": 5197332,
+  "host_total_ms": 5580.0,
+  "gpu_ms": 5580.0,
+  "notes": "布球接触；包含mesh读取/AABB构建/两次SAP",
+  "timestamp": 1764255142
+}

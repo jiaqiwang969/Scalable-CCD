@@ -1,0 +1,16 @@
+{
+  "backend": "cuda",
+  "device": "NVIDIA GeForce RTX 3090",
+  "device_id": "1",
+  "device_alias": "rtx3090",
+  "category": "broad_phase_sap",
+  "case_name": "Cloth-Ball：宽阶段",
+  "section": "Cloth-Ball",
+  "slug": "cloth_ball_rtx3090",
+  "vf_pairs": 1655541,
+  "ee_pairs": 5197332,
+  "host_total_ms": 5010.0,
+  "gpu_ms": 5010.0,
+  "notes": "布球接触；包含mesh读取/AABB构建/两次SAP",
+  "timestamp": 1764255179
+}

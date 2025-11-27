@@ -58,9 +58,42 @@ The following libraries are used in this project:
 * [nlohmann/json](https://github.com/nlohmann/json): saving profiler data
     * Required when using the CMake option `SCALABLE_CCD_WITH_PROFILER`
 
-## Usage
+## CUDA / Metal 验证
 
-:hammer_and_wrench: **ToDo**: Write usage instructions.
+### 测试场景与规模
+
+| 场景 | VF 碰撞对 | EE 碰撞对 | 备注 |
+| --- | --- | --- | --- |
+| Armadillo-Rollers | 4,652 | 19,313 | 犰狳滚轮模拟 |
+| Cloth-Funnel | 92 | 263 | 布料漏斗模拟 |
+| N-Body | 9,460 | 41,036 | N 体模拟（大算力） |
+
+> Cloth-Ball（VF=1,655,541、EE=5,197,332）与 Rod-Twist 也包含在宽阶段测试，与上表同样依赖 `tests/data` 内的帧与碰撞对。
+
+### CUDA 结果导出
+
+使用 `tests/export_cuda_results.py` 可以批量运行 Catch2 的 CUDA 宽阶段测试，并将结果写入 `tests/results/cuda_sap_<case>_<alias>.json`：
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DSCALABLE_CCD_WITH_CUDA=ON
+cmake --build build -j
+python3 tests/export_cuda_results.py \
+    --device 0:rtx2000ada:"NVIDIA RTX 2000 Ada Generation Laptop GPU" \
+    --device 1:rtx3090:"NVIDIA GeForce RTX 3090"
+```
+
+脚本会针对五个 Section（Armadillo-Rollers / Cloth-Ball / Cloth-Funnel / N-Body / Rod-Twist）逐一执行 `./tests/scalable_ccd_tests "Test CUDA broad phase" -c <Section> --durations yes`，并把 Catch2 输出的壁钟时间填入 JSON：`host_total_ms` 与 `gpu_ms` 字段均为整段运行所耗时间（含 mesh 读取、AABB 构建与两次 SAP 检测）。如需限制 GPU，可仅传入一个 `--device` 或自行设置 `CUDA_VISIBLE_DEVICES`。
+
+### N-Body 高负载细节
+
+- VF 阶段：需要处理约 9.4M 候选对，在默认缓冲区溢出后扩容至 16.7M。
+- EE 阶段：需要处理约 22.4M 候选对，缓冲区扩容至 22.4M。
+- 单次完整测试（含文件读取、AABB 构建、GPU 计算）约 66 s，可作为重负载性能基准。
+- 结果与 `tests/data/n-body-simulation/boxes/18*.json` 的 ground truth 完全一致。
+
+### Metal 数据
+
+macOS + Metal 的宽阶段对拍结果参考 `tests/results/metal_sap_*.json`（例如 cloth-ball vf/ee），结构与 CUDA JSON 对齐，可直接进行后端比较。若要重新生成 Metal 数据，可在 macOS 上开启 `SCALABLE_CCD_WITH_METAL` 并运行对应的 Catch2 Section。
 
 ## Citation
 
