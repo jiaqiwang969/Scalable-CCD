@@ -1,0 +1,19 @@
+{
+  "backend": "metal",
+  "device": "Apple M4 Max",
+  "device_alias": "apple_m4_max",
+  "category": "broad_phase_sap",
+  "case_name": "N-Body：宽阶段",
+  "section": "N-Body",
+  "slug": "n_body_apple_m4_max",
+  "vf_pairs": 9396388,
+  "ee_pairs": 22366873,
+  "host_total_ms": 22910.400,
+  "gpu_ms": 22910.400,
+  "vf_total_ms": 9101.407,
+  "ee_total_ms": 13771.372,
+  "vf_stq_ms": 256.148,
+  "ee_stq_ms": 256.148,
+  "notes": "N体模拟；Metal2 STQ 模式；包含 mesh 读取 / AABB 构建 / 两次检测",
+  "timestamp": 1764256392
+}

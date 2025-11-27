@@ -1,0 +1,19 @@
+{
+  "backend": "metal",
+  "device": "Apple M4 Max",
+  "device_alias": "apple_m4_max",
+  "category": "broad_phase_sap",
+  "case_name": "Cloth-Funnel：宽阶段",
+  "section": "Cloth-Funnel",
+  "slug": "cloth_funnel_apple_m4_max",
+  "vf_pairs": 7319,
+  "ee_pairs": 33770,
+  "host_total_ms": 285.864,
+  "gpu_ms": 285.864,
+  "vf_total_ms": 132.182,
+  "ee_total_ms": 150.200,
+  "vf_stq_ms": 24.416,
+  "ee_stq_ms": 24.416,
+  "notes": "布料漏斗；Metal2 STQ 模式；包含 mesh 读取 / AABB 构建 / 两次检测",
+  "timestamp": 1764256369
+}

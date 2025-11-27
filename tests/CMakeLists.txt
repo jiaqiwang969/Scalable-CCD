@@ -40,6 +40,16 @@ if(SCALABLE_CCD_WITH_METAL2)
   )
   target_link_libraries(test_narrow_phase_metal2 PRIVATE scalable_ccd::scalable_ccd)
   target_compile_features(test_narrow_phase_metal2 PRIVATE cxx_std_17)
+
+  # Standalone Metal2 performance test with JSON output
+  add_executable(test_performance_metal2
+    test_performance_metal2.cpp
+  )
+  target_link_libraries(test_performance_metal2 PRIVATE
+    scalable_ccd::scalable_ccd
+    igl::core
+  )
+  target_compile_features(test_performance_metal2 PRIVATE cxx_std_17)
 endif()
 
 # ==============================================================================

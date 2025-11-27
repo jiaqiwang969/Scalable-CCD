@@ -1,116 +1,121 @@
 {
-  "generated_at": "2025-11-27T18:05:04.299355",
+  "generated_at": "2025-11-27T23:15:22.702725",
   "comparisons": [
     {
-      "slug": "cloth_ball_ee",
-      "case_name": "Cloth-Ball\uff1a\u8fb9-\u8fb9",
-      "cuda": {
-        "gpu_ms": 68.00048065185547,
-        "overlaps_count": 5197332,
-        "passed": true
+      "section": "N-Body",
+      "cuda_rtx3090": {
+        "host_total_ms": 17911.0,
+        "vf_pairs": 9460,
+        "ee_pairs": 41036
       },
-      "metal_sap": {
-        "gpu_ms": 8.164750001014909,
-        "overlaps_count": 5197332,
-        "passed": true
+      "cuda_rtx2000ada": {
+        "host_total_ms": 22729.0,
+        "vf_pairs": 9460,
+        "ee_pairs": 41036
       },
-      "metal_stq": {
-        "gpu_ms": 60.295750001387205,
-        "overlaps_count": 5197332,
-        "passed": true
+      "metal_m4max": {
+        "host_total_ms": 22910.4,
+        "vf_pairs": 9396388,
+        "ee_pairs": 22366873,
+        "vf_stq_ms": 256.148,
+        "ee_stq_ms": 256.148
       },
-      "match": true,
-      "speedup": "Metal 8.3x"
+      "speedup_vs_3090": 0.78,
+      "speedup_vs_2000ada": 0.99
     },
     {
-      "slug": "cloth_ball_vf",
-      "case_name": "Cloth-Ball\uff1a\u9876\u70b9-\u9762",
-      "cuda": {
-        "gpu_ms": 46.93967819213867,
-        "overlaps_count": 1655541,
-        "passed": true
-      },
-      "metal_sap": {
-        "gpu_ms": 11.082333334343275,
-        "overlaps_count": 1655541,
-        "passed": true
-      },
-      "metal_stq": {
-        "gpu_ms": 73.77645833184943,
-        "overlaps_count": 1655541,
-        "passed": true
-      },
-      "match": true,
-      "speedup": "Metal 4.2x"
+      "section": "unknown",
+      "cuda_rtx3090": null,
+      "cuda_rtx2000ada": null,
+      "metal_m4max": null,
+      "speedup_vs_3090": null,
+      "speedup_vs_2000ada": null
     },
     {
-      "slug": "single_list_chain",
-      "case_name": "\u5355\u5217\u8868\uff1a\u94fe\u5f0f\u91cd\u53e0",
-      "cuda": {
-        "gpu_ms": 11.166912078857422,
-        "overlaps_count": 3,
-        "passed": true
+      "section": "Rod-Twist",
+      "cuda_rtx3090": {
+        "host_total_ms": 1378.0,
+        "vf_pairs": null,
+        "ee_pairs": null
       },
-      "metal_sap": {
-        "gpu_ms": 0.01420833359588869,
-        "overlaps_count": 3,
-        "passed": true
+      "cuda_rtx2000ada": {
+        "host_total_ms": 1503.0,
+        "vf_pairs": null,
+        "ee_pairs": null
       },
-      "metal_stq": {
-        "gpu_ms": 0.01866666934802197,
-        "overlaps_count": 3,
-        "passed": true
-      },
-      "match": true,
-      "speedup": "Metal 785.9x"
+      "metal_m4max": null,
+      "speedup_vs_3090": null,
+      "speedup_vs_2000ada": null
     },
     {
-      "slug": "single_list_shared_vertex_filtered",
-      "case_name": "\u5355\u5217\u8868\uff1a\u5171\u4eab\u9876\u70b9\u8fc7\u6ee4",
-      "cuda": {
-        "gpu_ms": 11.050335884094238,
-        "overlaps_count": 0,
-        "passed": true
+      "section": "Cloth-Funnel",
+      "cuda_rtx3090": {
+        "host_total_ms": 274.0,
+        "vf_pairs": 92,
+        "ee_pairs": 263
       },
-      "metal_sap": {
-        "gpu_ms": 0.012083331967005506,
-        "overlaps_count": 0,
-        "passed": true
+      "cuda_rtx2000ada": {
+        "host_total_ms": 218.0,
+        "vf_pairs": 92,
+        "ee_pairs": 263
       },
-      "metal_stq": {
-        "gpu_ms": 0.017083333659684286,
-        "overlaps_count": 0,
-        "passed": true
+      "metal_m4max": {
+        "host_total_ms": 285.864,
+        "vf_pairs": 7319,
+        "ee_pairs": 33770,
+        "vf_stq_ms": 24.416,
+        "ee_stq_ms": 24.416
       },
-      "match": true,
-      "speedup": "Metal 914.5x"
+      "speedup_vs_3090": 0.96,
+      "speedup_vs_2000ada": 0.76
     },
     {
-      "slug": "two_lists_cross_only",
-      "case_name": "\u53cc\u5217\u8868\uff1a\u4ec5\u8de8\u5217\u8868\u914d\u5bf9",
-      "cuda": {
-        "gpu_ms": 11.52569580078125,
-        "overlaps_count": 2,
-        "passed": true
+      "section": "Cloth-Ball",
+      "cuda_rtx3090": {
+        "host_total_ms": 5010.0,
+        "vf_pairs": 1655541,
+        "ee_pairs": 5197332
       },
-      "metal_sap": {
-        "gpu_ms": 0.01433333454770036,
-        "overlaps_count": 2,
-        "passed": true
+      "cuda_rtx2000ada": {
+        "host_total_ms": 5580.0,
+        "vf_pairs": 1655541,
+        "ee_pairs": 5197332
       },
-      "metal_stq": {
-        "gpu_ms": 0.01799999881768599,
-        "overlaps_count": 2,
-        "passed": true
+      "metal_m4max": null,
+      "speedup_vs_3090": null,
+      "speedup_vs_2000ada": null
+    },
+    {
+      "section": "Armadillo-Rollers",
+      "cuda_rtx3090": {
+        "host_total_ms": 6943.0,
+        "vf_pairs": 4652,
+        "ee_pairs": 19313
       },
-      "match": true,
-      "speedup": "Metal 804.1x"
+      "cuda_rtx2000ada": {
+        "host_total_ms": 9873.0,
+        "vf_pairs": 4652,
+        "ee_pairs": 19313
+      },
+      "metal_m4max": {
+        "host_total_ms": 2130.495,
+        "vf_pairs": 2031902,
+        "ee_pairs": 5068080,
+        "vf_stq_ms": 46.256,
+        "ee_stq_ms": 46.256
+      },
+      "speedup_vs_3090": 3.26,
+      "speedup_vs_2000ada": 4.63
     }
   ],
   "summary": {
-    "total": 5,
-    "matched": 5,
-    "mismatched": 0,
-    "pending": 0
+    "total_scenarios": 6,
+    "cuda_devices": [
+      "RTX 3090",
+      "RTX 2000 Ada"
+    ],
+    "metal_devices": [
+      "Apple M4 Max"
+    ]
   }
 }
