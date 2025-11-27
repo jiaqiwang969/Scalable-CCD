@@ -67,6 +67,7 @@ project(ScalableCCD
 
 option(SCALABLE_CCD_WITH_CUDA "Enable CUDA CCD" OFF)
 option(SCALABLE_CCD_WITH_METAL "Enable Metal backend via metal-cpp (CUDA-aligned broad phase)" ${SCALABLE_CCD_TOPLEVEL_PROJECT})
+option(SCALABLE_CCD_WITH_METAL2 "Enable Metal2 backend (New Architecture)" ${SCALABLE_CCD_TOPLEVEL_PROJECT})
 option(SCALABLE_CCD_USE_DOUBLE "Use double precision calculation" ON)
 option(SCALABLE_CCD_TOI_PER_QUERY "Output time of impact per query in JSON" OFF)
 option(SCALABLE_CCD_BUILD_TESTS "Build Scalable CCD tests" ${SCALABLE_CCD_TOPLEVEL_PROJECT})

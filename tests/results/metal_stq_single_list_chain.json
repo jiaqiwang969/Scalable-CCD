@@ -2,11 +2,11 @@
   "backend": "metal_stq",
   "case_name": "单列表：链式重叠",
   "category": "broad_phase_stq",
-  "cpu_ms": 3.491583,
-  "cpu_total_ms": 3.985167,
-  "gpu_ms": 0.019249971956014633,
+  "cpu_ms": 16.551416,
+  "cpu_total_ms": 20.075792,
+  "gpu_ms": 0.01866666934802197,
   "overlaps_count": 3,
   "passed": true,
   "slug": "single_list_chain",
-  "timestamp": 1763522948
+  "timestamp": 1764235209
 }

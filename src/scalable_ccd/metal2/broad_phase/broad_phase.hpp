@@ -4,7 +4,7 @@
 #include <scalable_ccd/broad_phase/sort_and_sweep.hpp>
 #include <scalable_ccd/utils/logger.hpp>
 
-#include <scalable_ccd/metal2/broad_phase/aabb.hpp>
+#include "aabb.hpp"
 #include <scalable_ccd/metal2/runtime/runtime.hpp>
 
 #include <algorithm>
@@ -19,6 +19,8 @@
 
 namespace scalable_ccd::metal2 {
 
+using scalable_ccd::AABB;
+
 // Metal v2 BroadPhase（全新实现骨架）
 // 目标：默认“严格正确性模式”，最终结果直接回退 CPU sort_and_sweep；
 // 后续逐步引入 GPU 路径（disable/enable 可控），并保持与 truth 对齐。
@@ -28,15 +30,23 @@ public:
 
     struct Timing {
         // 细分计时（毫秒）；<0 表示未采集
+        double axis_merge_ms = -1.0;
+        std::string pairs_src = "cpu"; // "cpu" or "gpu"
+        double pairs_ms = -1.0;
+        std::string filter_src = "cpu"; // "cpu" or "gpu" or "off"
+        double filter_ms = -1.0;
+        double compose_ms = -1.0;
         double total_ms = -1.0;
-        double axis_merge_ms = -1.0; // 轴向排序/合并/准备数据
-        double pairs_ms = -1.0;      // 候选生成（GPU STQ 或 CPU）
-        double filter_ms = -1.0;     // YZ 过滤（GPU 或 CPU）
-        double compose_ms = -1.0;    // 规范化/去重/排序
         int sort_axis = 0;
-        std::string pairs_src = "none";  // "gpu" | "cpu" | "none"
-        std::string filter_src = "none"; // "gpu" | "cpu" | "off"
     };
+
+    std::shared_ptr<DeviceAABBs> d_boxesA;
+    std::shared_ptr<DeviceAABBs> d_boxesB;
+    bool is_two_lists = false;
+    std::vector<std::pair<int, int>> m_overlaps;
+    bool built_ = false;
+    bool ran_ = false;
+    Timing last_timing_;
 
     void clear()
     {
@@ -67,11 +77,6 @@ public:
         is_two_lists = true;
         built_ = true;
     }
-
-    struct AxisSorted {
-        std::vector<AABB> boxes;
-        int sort_axis = 0;
-    };
 
     static void sort_boxes_along_axis(int& sort_axis, std::vector<AABB>& boxes)
     {
@@ -156,7 +161,9 @@ public:
             env_flag_enabled("SCALABLE_CCD_METAL2_OBSERVE", true);
         const bool log_timing =
             env_flag_enabled("SCALABLE_CCD_METAL2_LOG_TIMING", false);
-        // 预留：将来可逐步导入 GPU 路径；当前严格模式恒走 CPU。
+        // 融合内核开关（默认开启）
+        const bool use_fused =
+            env_flag_enabled("SCALABLE_CCD_METAL2_USE_FUSED", true);
 
         int sort_axis = 0;
         if (is_two_lists) {
@@ -258,13 +265,20 @@ public:
                 const int sel = filterSel("SCALABLE_CCD_METAL2_FILTER");
                 std::vector<uint8_t> mask;
                 bool ok = false;
-                if (sel == 2 && Metal2Runtime::instance().available()
-                    && Metal2Runtime::instance().warmup()) {
-                    ok = Metal2Runtime::instance().filterYZ(
-                        minY, maxY, minZ, maxZ, v0, v1, v2, pairs,
-                        /*two_lists*/ true, mask);
+                std::vector<uint32_t>
+                    compactedIndices;          // Added for atomic append
+                bool gpu_compose_done = false; // Added for atomic append
+                if (sel == 2 && Metal2Runtime::instance().available()) {
+                    // Atomic Append Strategy (Single Pass)
+                    if (Metal2Runtime::instance().yzFilterAtomic(
+                            minY, maxY, minZ, maxZ, v0, v1, v2, pairs,
+                            true, // Changed false to true for two_lists
+                            compactedIndices)) {
+                        gpu_compose_done = true;
+                    }
                 }
-                if (!ok) {
+                if (!gpu_compose_done) { // Changed from !ok to
+                                         // !gpu_compose_done
                     cpu_filter_yz(merged, pairs, /*two_lists*/ true, mask);
                 }
                 size_t kept = 0;
@@ -276,8 +290,94 @@ public:
                     pairs.size(), kept);
                 // 与最终集合做差集（最终集合稍后计算）
             }
-            // 最终结果：严格或未启用 STQ -> 回退 CPU；否则使用 轴候选+过滤 产出
-            if (!strict
+            // 最终结果：优先使用融合内核，其次 STQ，最后回退 CPU
+            if (!strict && use_fused && Metal2Runtime::instance().available()) {
+                // 融合内核路径：STQ + YZ Filter 一次完成
+                auto t_axis_start = Clock::now();
+                std::vector<AABB> a_final = a;
+                std::vector<AABB> b_final = b;
+                auto less_min_x = [](const AABB& x, const AABB& y) {
+                    return x.min[0] < y.min[0];
+                };
+                std::sort(a_final.begin(), a_final.end(), less_min_x);
+                std::sort(b_final.begin(), b_final.end(), less_min_x);
+                for (auto& ax : a_final)
+                    ax.element_id = -ax.element_id - 1;
+                std::vector<AABB> merged(a_final.size() + b_final.size());
+                std::merge(
+                    a_final.begin(), a_final.end(), b_final.begin(),
+                    b_final.end(), merged.begin(), less_min_x);
+                auto t_axis_end = Clock::now();
+
+                // 准备数据
+                std::vector<double> minX(merged.size()), maxX(merged.size());
+                std::vector<double> minYd(merged.size()), maxYd(merged.size());
+                std::vector<double> minZd(merged.size()), maxZd(merged.size());
+                std::vector<int32_t> v0(merged.size()), v1(merged.size()), v2(merged.size());
+                std::vector<uint8_t> listTag(merged.size());
+                for (size_t i = 0; i < merged.size(); ++i) {
+                    minX[i] = merged[i].min[0];
+                    maxX[i] = merged[i].max[0];
+                    minYd[i] = merged[i].min[1];
+                    maxYd[i] = merged[i].max[1];
+                    double miZ = merged[i].min.size() >= 3 ? merged[i].min[2] : merged[i].min[1];
+                    double maZ = merged[i].max.size() >= 3 ? merged[i].max[2] : merged[i].max[1];
+                    minZd[i] = miZ;
+                    maxZd[i] = maZ;
+                    v0[i] = static_cast<int32_t>(merged[i].vertex_ids[0]);
+                    v1[i] = static_cast<int32_t>(merged[i].vertex_ids[1]);
+                    v2[i] = static_cast<int32_t>(merged[i].vertex_ids[2]);
+                    listTag[i] = merged[i].element_id < 0 ? 1 : 0;
+                }
+
+                std::vector<std::pair<int, int>> fusedPairs;
+                bool fused_ok = Metal2Runtime::instance().stqWithYZFilter(
+                    minX, maxX, minYd, maxYd, minZd, maxZd,
+                    v0, v1, v2, listTag, fusedPairs);
+
+                if (fused_ok) {
+                    // 转换为 element_id 对
+                    m_overlaps.clear();
+                    m_overlaps.reserve(fusedPairs.size());
+                    for (const auto& p : fusedPairs) {
+                        const AABB& A0 = merged[p.first];
+                        const AABB& B0 = merged[p.second];
+                        const bool a_from_A = (A0.element_id < 0);
+                        const int aid = a_from_A
+                            ? (-static_cast<int>(A0.element_id) - 1)
+                            : (-static_cast<int>(B0.element_id) - 1);
+                        const int bid = a_from_A
+                            ? static_cast<int>(B0.element_id)
+                            : static_cast<int>(A0.element_id);
+                        m_overlaps.emplace_back(aid, bid);
+                    }
+                    std::sort(m_overlaps.begin(), m_overlaps.end());
+                    m_overlaps.erase(
+                        std::unique(m_overlaps.begin(), m_overlaps.end()),
+                        m_overlaps.end());
+
+                    last_timing_.sort_axis = 0;
+                    last_timing_.axis_merge_ms =
+                        std::chrono::duration<double, std::milli>(t_axis_end - t_axis_start).count();
+                    last_timing_.pairs_src = "gpu_fused";
+                    last_timing_.pairs_ms = Metal2Runtime::instance().lastSTQPairsMs();
+                    last_timing_.filter_src = "gpu_fused";
+                    last_timing_.filter_ms = 0.0; // 融合内核
+                    last_timing_.compose_ms = 0.0;
+                    last_timing_.total_ms =
+                        std::chrono::duration<double, std::milli>(Clock::now() - t_total_start).count();
+
+                    if (log_timing) {
+                        logger().info(
+                            "Metal2 Timing(two,fused): axis_merge_ms={:.3f} fused_ms={:.3f} total_ms={:.3f} overlaps={}",
+                            last_timing_.axis_merge_ms, last_timing_.pairs_ms,
+                            last_timing_.total_ms, m_overlaps.size());
+                    }
+                } else {
+                    // 融合内核失败，回退 CPU
+                    sort_and_sweep(std::move(a), std::move(b), sort_axis, m_overlaps);
+                }
+            } else if (!strict
                 && env_flag_enabled("SCALABLE_CCD_METAL2_USE_STQ", false)) {
                 auto t_axis_start = Clock::now();
                 // 使用与观测一致的管线生成最终输出（沿 X 轴排序与合并）
@@ -395,16 +495,62 @@ public:
                 std::vector<uint32_t> compactedIndices;
 
                 if (sel == 2 && Metal2Runtime::instance().available()) {
-                    // 1. Scan
-                    std::vector<uint32_t> scanOffsets;
-                    // Pass mask directly (uint8_t)
-                    if (Metal2Runtime::instance().scan(mask, scanOffsets)) {
-                        // 2. Compact (Index-Only)
-                        if (Metal2Runtime::instance().compact(
-                                mask, scanOffsets, compactedIndices)) {
-                            gpu_compose_done = true;
-                        }
-                    }
+                    // Atomic Append Strategy
+                    // 1. Allocate Atomic Counter (4 bytes)
+                    // 2. Allocate Output Buffer (Capacity = pairs.size())
+                    // 3. Dispatch yzFilterAtomic
+                    // 4. Read back count and indices
+
+                    // Using a simple MTLBuffer wrapper or raw pointer from
+                    // runtime would be ideal, but here we rely on runtime to
+                    // manage temporary buffers if possible, OR we pass raw
+                    // pointers if we had access to device memory. Since
+                    // Metal2Runtime encapsulates device, we need to let it
+                    // handle buffer creation or pass raw pointers if we exposed
+                    // them. For now, we updated yzFilterAtomic to take raw
+                    // pointers (void*), but we need to allocate them. Actually,
+                    // let's use a helper in runtime or just pass vectors and
+                    // let runtime copy? No, we want zero-copy on output. Let's
+                    // assume we modify yzFilterAtomic to return the indices
+                    // vector directly by handling the buffer internally and
+                    // copying back to host vector. Wait, the previous plan said
+                    // "Read back count and indices".
+
+                    // Let's stick to the signature we defined in runtime.hpp:
+                    // bool yzFilterAtomic(..., void* d_atomic_counter, void*
+                    // d_out_indices, uint32_t max_capacity); This requires us
+                    // to have MTLBuffer* here. But BroadPhase doesn't include
+                    // Metal headers. We should probably wrap this in a cleaner
+                    // interface in Runtime. Let's modify runtime.hpp to take
+                    // std::vector<uint32_t>& outIndices and handle the GPU part
+                    // internally to keep BroadPhase clean of Metal types.
+
+                    // REVISION: I will modify the call to use a new helper
+                    // `yzFilterAtomicVector` or just update `yzFilterAtomic` to
+                    // take `std::vector<uint32_t>&` and do the copy internally.
+                    // The previous `compact` did this (took vector&
+                    // outIndices). Let's assume I update runtime.mm to handle
+                    // the buffer creation/copy.
+
+                    // Wait, I already implemented `yzFilterAtomic` in
+                    // runtime.mm taking `void*`. This is awkward for
+                    // BroadPhase. I should have implemented a version that
+                    // returns vector. I will use a temporary fix: I'll add a
+                    // helper in BroadPhase that calls a new Runtime method OR I
+                    // will re-implement `yzFilterAtomic` in runtime.mm to match
+                    // `compact` style (vector output).
+
+                    // Let's go with: Update runtime.mm to overload
+                    // `yzFilterAtomic` or change the signature to `bool
+                    // yzFilterAtomic(..., std::vector<uint32_t>& outIndices)`.
+                    // This is much cleaner for BroadPhase.
+
+                    // BUT, I already wrote the `void*` version.
+                    // I will write a wrapper in `broad_phase.hpp`? No, I can't
+                    // include Metal. I MUST update `runtime.hpp` and
+                    // `runtime.mm` to expose a vector-based interface.
+
+                    // Let's pause BroadPhase edit and fix Runtime first.
                 }
 
                 m_overlaps.reserve(
@@ -631,6 +777,8 @@ public:
             const bool use_stq =
                 (!strict
                  && env_flag_enabled("SCALABLE_CCD_METAL2_USE_STQ", false));
+            const bool use_fused_single =
+                (!strict && use_fused && Metal2Runtime::instance().available());
             if (observe && !a.empty()) {
                 // OBS 统计：若使用 STQ，与最终路径保持一致（沿 X 轴排序）
                 if (use_stq) {
@@ -693,7 +841,78 @@ public:
                     "Metal2 Broad-phase OBS(single): axis_pairs={} yz_kept={}",
                     pairs.size(), kept);
             }
-            if (!use_stq) {
+            if (use_fused_single) {
+                // 融合内核路径（单列表）
+                auto t_axis_start = Clock::now();
+                auto less_min_x = [](const AABB& x, const AABB& y) {
+                    return x.min[0] < y.min[0];
+                };
+                std::sort(a.begin(), a.end(), less_min_x);
+                sort_axis = 0;
+                auto t_axis_end = Clock::now();
+
+                // 准备数据
+                std::vector<double> minX(a.size()), maxX(a.size());
+                std::vector<double> minYd(a.size()), maxYd(a.size());
+                std::vector<double> minZd(a.size()), maxZd(a.size());
+                std::vector<int32_t> v0(a.size()), v1(a.size()), v2(a.size());
+                for (size_t i = 0; i < a.size(); ++i) {
+                    minX[i] = a[i].min[0];
+                    maxX[i] = a[i].max[0];
+                    minYd[i] = a[i].min[1];
+                    maxYd[i] = a[i].max[1];
+                    double miZ = a[i].min.size() >= 3 ? a[i].min[2] : a[i].min[1];
+                    double maZ = a[i].max.size() >= 3 ? a[i].max[2] : a[i].max[1];
+                    minZd[i] = miZ;
+                    maxZd[i] = maZ;
+                    v0[i] = static_cast<int32_t>(a[i].vertex_ids[0]);
+                    v1[i] = static_cast<int32_t>(a[i].vertex_ids[1]);
+                    v2[i] = static_cast<int32_t>(a[i].vertex_ids[2]);
+                }
+
+                std::vector<std::pair<int, int>> fusedPairs;
+                std::vector<uint8_t> emptyTag; // 空 tag 表示单列表
+                bool fused_ok = Metal2Runtime::instance().stqWithYZFilter(
+                    minX, maxX, minYd, maxYd, minZd, maxZd,
+                    v0, v1, v2, emptyTag, fusedPairs);
+
+                if (fused_ok) {
+                    m_overlaps.clear();
+                    m_overlaps.reserve(fusedPairs.size());
+                    for (const auto& p : fusedPairs) {
+                        const AABB& A0 = a[p.first];
+                        const AABB& B0 = a[p.second];
+                        int ida = static_cast<int>(A0.element_id);
+                        int idb = static_cast<int>(B0.element_id);
+                        m_overlaps.emplace_back(std::min(ida, idb), std::max(ida, idb));
+                    }
+                    std::sort(m_overlaps.begin(), m_overlaps.end());
+                    m_overlaps.erase(
+                        std::unique(m_overlaps.begin(), m_overlaps.end()),
+                        m_overlaps.end());
+
+                    last_timing_.sort_axis = sort_axis;
+                    last_timing_.axis_merge_ms =
+                        std::chrono::duration<double, std::milli>(t_axis_end - t_axis_start).count();
+                    last_timing_.pairs_src = "gpu_fused";
+                    last_timing_.pairs_ms = Metal2Runtime::instance().lastSTQPairsMs();
+                    last_timing_.filter_src = "gpu_fused";
+                    last_timing_.filter_ms = 0.0;
+                    last_timing_.compose_ms = 0.0;
+                    last_timing_.total_ms =
+                        std::chrono::duration<double, std::milli>(Clock::now() - t_total_start).count();
+
+                    if (log_timing) {
+                        logger().info(
+                            "Metal2 Timing(single,fused): axis_ms={:.3f} fused_ms={:.3f} total_ms={:.3f} overlaps={}",
+                            last_timing_.axis_merge_ms, last_timing_.pairs_ms,
+                            last_timing_.total_ms, m_overlaps.size());
+                    }
+                } else {
+                    // 融合内核失败，回退 CPU
+                    sort_and_sweep(std::move(a), sort_axis, m_overlaps);
+                }
+            } else if (!use_stq) {
                 sort_and_sweep(std::move(a), sort_axis, m_overlaps);
             } else {
                 auto t_axis_start = Clock::now();
@@ -771,19 +990,21 @@ public:
                         return 0;
                     return 1;
                 }();
-                std::vector<uint8_t> mask;
-                bool ok = false;
+                std::vector<uint32_t>
+                    compactedIndices;          // Added for atomic append
+                bool gpu_compose_done = false; // Added for atomic append
+                std::vector<uint8_t> mask;     // Restored
                 auto t_filter_cpu_start = Clock::now();
-                if (sel == 2 && Metal2Runtime::instance().available()
-                    && Metal2Runtime::instance().warmup()) {
-                    ok = Metal2Runtime::instance().filterYZ(
-                        minY, maxY, minZ, maxZ, v0, v1, v2, pairs, false, mask);
-                    if (ok)
+                if (sel == 2 && Metal2Runtime::instance().available()) {
+                    // Atomic Append Strategy (Single Pass)
+                    if (Metal2Runtime::instance().yzFilterAtomic(
+                            minY, maxY, minZ, maxZ, v0, v1, v2, pairs, false,
+                            compactedIndices)) {
+                        gpu_compose_done = true;
                         last_timing_.filter_src = "gpu";
-                    else
-                        last_timing_.filter_src = "cpu";
+                    }
                 }
-                if (!ok) {
+                if (!gpu_compose_done) {
                     cpu_filter_yz(a, pairs, /*two_lists*/ false, mask);
                     last_timing_.filter_src = "cpu";
                 }
@@ -791,64 +1012,81 @@ public:
                 // compose
                 auto t_compose_start = Clock::now();
                 m_overlaps.clear();
-                m_overlaps.reserve(pairs.size());
-                for (size_t i = 0; i < pairs.size(); ++i) {
-                    if (!mask[i])
-                        continue;
-                    const auto& A = a[pairs[i].first];
-                    const auto& B = a[pairs[i].second];
-                    int ida = static_cast<int>(A.element_id);
-                    int idb = static_cast<int>(B.element_id);
-                    m_overlaps.emplace_back(
-                        std::min(ida, idb), std::max(ida, idb));
-                }
-                std::sort(m_overlaps.begin(), m_overlaps.end());
-                m_overlaps.erase(
-                    std::unique(m_overlaps.begin(), m_overlaps.end()),
-                    m_overlaps.end());
-                auto t_compose_end = Clock::now();
+                m_overlaps.reserve(
+                    gpu_compose_done ? compactedIndices.size() : pairs.size());
 
-                last_timing_.sort_axis = sort_axis;
-                last_timing_.axis_merge_ms =
-                    std::chrono::duration<double, std::milli>(
-                        t_axis_end - t_axis_start)
-                        .count();
-                if (last_timing_.pairs_src == "gpu") {
-                    last_timing_.pairs_ms =
-                        Metal2Runtime::instance().lastSTQPairsMs();
+                if (gpu_compose_done) {
+                    // Zero-Copy: Read pairs using indices
+                    for (uint32_t idx : compactedIndices) {
+                        const auto& p = pairs[idx];
+                        const AABB& A0 = a[p.first];
+                        const AABB& B0 = a[p.second];
+                        int ida = static_cast<int>(A0.element_id);
+                        int idb = static_cast<int>(B0.element_id);
+                        m_overlaps.emplace_back(
+                            std::min(ida, idb), std::max(ida, idb));
+                    }
                 } else {
-                    last_timing_.pairs_ms =
+                    for (size_t i = 0; i < pairs.size(); ++i) {
+                        if (!mask[i])
+                            continue;
+                        const auto& A = a[pairs[i].first];
+                        const auto& B = a[pairs[i].second];
+                        int ida = static_cast<int>(A.element_id);
+                        int idb = static_cast<int>(B.element_id);
+                        m_overlaps.emplace_back(
+                            std::min(ida, idb), std::max(ida, idb));
+                    }
+                    std::sort(m_overlaps.begin(), m_overlaps.end());
+                    m_overlaps.erase(
+                        std::unique(m_overlaps.begin(), m_overlaps.end()),
+                        m_overlaps.end());
+                    auto t_compose_end = Clock::now();
+
+                    last_timing_.sort_axis = sort_axis;
+                    last_timing_.axis_merge_ms =
                         std::chrono::duration<double, std::milli>(
-                            t_pairs_cpu_end - t_pairs_cpu_start)
+                            t_axis_end - t_axis_start)
                             .count();
-                }
-                if (last_timing_.filter_src == "gpu") {
-                    last_timing_.filter_ms =
-                        Metal2Runtime::instance().lastYZFilterMs();
-                } else if (sel != 0) {
-                    last_timing_.filter_ms =
+                    if (last_timing_.pairs_src == "gpu") {
+                        last_timing_.pairs_ms =
+                            Metal2Runtime::instance().lastSTQPairsMs();
+                    } else {
+                        last_timing_.pairs_ms =
+                            std::chrono::duration<double, std::milli>(
+                                t_pairs_cpu_end - t_pairs_cpu_start)
+                                .count();
+                    }
+                    if (last_timing_.filter_src == "gpu") {
+                        last_timing_.filter_ms =
+                            Metal2Runtime::instance().lastYZFilterMs();
+                    } else if (sel != 0) {
+                        last_timing_.filter_ms =
+                            std::chrono::duration<double, std::milli>(
+                                t_filter_cpu_end - t_filter_cpu_start)
+                                .count();
+                    } else {
+                        last_timing_.filter_src = "off";
+                        last_timing_.filter_ms = 0.0;
+                    }
+                    last_timing_.compose_ms =
                         std::chrono::duration<double, std::milli>(
-                            t_filter_cpu_end - t_filter_cpu_start)
+                            t_compose_end - t_compose_start)
                             .count();
-                } else {
-                    last_timing_.filter_src = "off";
-                    last_timing_.filter_ms = 0.0;
-                }
-                last_timing_.compose_ms =
-                    std::chrono::duration<double, std::milli>(
-                        t_compose_end - t_compose_start)
-                        .count();
-                last_timing_.total_ms =
-                    std::chrono::duration<double, std::milli>(
-                        Clock::now() - t_total_start)
-                        .count();
-                if (log_timing) {
-                    logger().info(
-                        "Metal2 Timing(single): axis_merge_ms={:.3f} pairs_ms({})={:.3f} filter_ms({})={:.3f} compose_ms={:.3f} total_ms={:.3f}",
-                        last_timing_.axis_merge_ms,
-                        last_timing_.pairs_src.c_str(), last_timing_.pairs_ms,
-                        last_timing_.filter_src.c_str(), last_timing_.filter_ms,
-                        last_timing_.compose_ms, last_timing_.total_ms);
+                    last_timing_.total_ms =
+                        std::chrono::duration<double, std::milli>(
+                            Clock::now() - t_total_start)
+                            .count();
+                    if (log_timing) {
+                        logger().info(
+                            "Metal2 Timing(single): axis_merge_ms={:.3f} pairs_ms({})={:.3f} filter_ms({})={:.3f} compose_ms={:.3f} total_ms={:.3f}",
+                            last_timing_.axis_merge_ms,
+                            last_timing_.pairs_src.c_str(),
+                            last_timing_.pairs_ms,
+                            last_timing_.filter_src.c_str(),
+                            last_timing_.filter_ms, last_timing_.compose_ms,
+                            last_timing_.total_ms);
+                    }
                 }
             }
             if (observe) {
@@ -978,14 +1216,6 @@ private:
             return false;
         return true;
     }
-
-    std::shared_ptr<DeviceAABBs> d_boxesA;
-    std::shared_ptr<DeviceAABBs> d_boxesB;
-    bool is_two_lists = false;
-    std::vector<std::pair<int, int>> m_overlaps;
-    bool built_ = false;
-    bool ran_ = false;
-    Timing last_timing_;
 };
 
 } // namespace scalable_ccd::metal2

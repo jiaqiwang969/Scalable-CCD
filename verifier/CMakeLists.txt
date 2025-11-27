@@ -61,6 +61,10 @@ target_compile_definitions(scalable_ccd_verifier PRIVATE
   SCALABLE_CCD_BUILD_TYPE="$<IF:$<CONFIG:Debug>,Debug,Release>"
 )
 
+if(SCALABLE_CCD_WITH_METAL2)
+  target_compile_definitions(scalable_ccd_verifier PRIVATE SCALABLE_CCD_WITH_METAL2)
+endif()
+
 add_executable(scalable_ccd_aggregate
   aggregate.cpp
   report.cpp

@@ -33,6 +33,13 @@ if(SCALABLE_CCD_WITH_METAL2)
   target_sources(scalable_ccd_tests PRIVATE
     test_broad_phase_metal2.cpp
   )
+
+  # Standalone Metal2 narrow phase test
+  add_executable(test_narrow_phase_metal2
+    test_narrow_phase_metal2.cpp
+  )
+  target_link_libraries(test_narrow_phase_metal2 PRIVATE scalable_ccd::scalable_ccd)
+  target_compile_features(test_narrow_phase_metal2 PRIVATE cxx_std_17)
 endif()
 
 # ==============================================================================

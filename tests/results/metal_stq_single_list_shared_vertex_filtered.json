@@ -2,11 +2,11 @@
   "backend": "metal_stq",
   "case_name": "单列表：共享顶点过滤",
   "category": "broad_phase_stq",
-  "cpu_ms": 2.925334,
-  "cpu_total_ms": 3.426959,
-  "gpu_ms": 0.05324999801814556,
+  "cpu_ms": 3.745083,
+  "cpu_total_ms": 5.207,
+  "gpu_ms": 0.017083333659684286,
   "overlaps_count": 0,
   "passed": true,
   "slug": "single_list_shared_vertex_filtered",
-  "timestamp": 1763522948
+  "timestamp": 1764235209
 }

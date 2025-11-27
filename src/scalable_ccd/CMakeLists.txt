@@ -15,3 +15,7 @@ add_subdirectory(utils)
 if(SCALABLE_CCD_WITH_CUDA)
   add_subdirectory(cuda)
 endif()
+
+if(SCALABLE_CCD_WITH_METAL2)
+  add_subdirectory(metal2)
+endif()
